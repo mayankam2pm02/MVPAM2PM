@@ -1,6 +1,6 @@
-# TalentOS — HR Platform MVP
+# Mr. Manager — your virtual manager
 
-End-to-end HR platform covering hiring, AI resume screening, training, CRM, task management, and reporting.
+End-to-end virtual manager covering hiring, AI resume screening, training, CRM, task management, and reporting.
 
 ## Features
 

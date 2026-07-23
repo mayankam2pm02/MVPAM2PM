@@ -47,9 +47,9 @@ export default function Sidebar() {
       {/* Logo */}
       <div style={{ padding: '1.5rem 1.25rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
         <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, color: '#fff', letterSpacing: '-0.3px' }}>
-          TalentOS
+          Mr. Manager
         </div>
-        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>HR Platform</div>
+        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>your virtual manager</div>
       </div>
 
       {/* Nav */}

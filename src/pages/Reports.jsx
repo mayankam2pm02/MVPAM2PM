@@ -565,7 +565,7 @@ export default function Reports() {
     const label  = MODULES.find(m => m.v === mod)?.l || mod
     const selJob = jobs.find(j => j.id === jobId)
     const selEmp = employees.find(e => e.id === empId)
-    lines.push(`TalentOS Report — ${label}${selJob ? ` / ${selJob.title}` : ''}${selEmp ? ` / ${selEmp.name}` : ''}`)
+    lines.push(`Mr. Manager Report — ${label}${selJob ? ` / ${selJob.title}` : ''}${selEmp ? ` / ${selEmp.name}` : ''}`)
     lines.push(`Generated: ${new Date().toLocaleString()}`, '')
 
     const include = t => mod === 'complete' || mod === t
@@ -597,7 +597,7 @@ export default function Reports() {
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
     const url  = URL.createObjectURL(blob)
     const a    = document.createElement('a')
-    a.href = url; a.download = `talentos-report-${mod}-${Date.now()}.csv`; a.click()
+    a.href = url; a.download = `mr-manager-report-${mod}-${Date.now()}.csv`; a.click()
     URL.revokeObjectURL(url)
   }
 

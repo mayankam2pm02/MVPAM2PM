@@ -1,6 +1,25 @@
 import { useState, useEffect } from 'react'
 import { fetchInterviewApplications, updateApplication } from '../lib/supabase.js'
 import { Calendar, Video, FileText, Phone, Mail, MessageCircle, CheckCircle, Copy, X, User, Search, Briefcase } from 'lucide-react'
+import { buildEmailDraft } from '../lib/emailUtils.js'
+
+function openInterviewEmail(email, name, jobTitle) {
+  if (!email) {
+    alert('No email on file for this candidate.')
+    return
+  }
+
+  const draft = buildEmailDraft({ type: 'interview', recipientEmail: email, name, jobTitle })
+  const mailtoUrl = `mailto:${encodeURIComponent(draft.to)}?subject=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`
+  const gmailUrl = `https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(draft.to)}&su=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`
+  const outlookUrl = `https://outlook.live.com/mail/0/deeplink/compose?to=${encodeURIComponent(draft.to)}&subject=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`
+
+  const opened = window.open(mailtoUrl, '_blank', 'noopener,noreferrer')
+  if (!opened) {
+    const useGmail = window.confirm('Your mail app did not open. Would you like to continue with Gmail webmail?')
+    window.open(useGmail ? gmailUrl : outlookUrl, '_blank', 'noopener,noreferrer')
+  }
+}
 
 // ─── Schedule Modal ────────────────────────────────────────────
 function ScheduleModal({ app, onClose, onScheduled }) {
@@ -45,7 +64,7 @@ Interview Details:
 Please feel free to reach out if you have any questions.
 
 Best regards,
-TalentOS Team`
+Mr. Manager Team`
     : ''
 
   function buildWAMessage(toRole) {
@@ -55,7 +74,7 @@ TalentOS Team`
     const body = toRole === 'interviewer'
       ? `You have been scheduled to interview *${candidate.name || 'the candidate'}* for the *${job.title || 'position'}* role${job.department ? ` (${job.department})` : ''}.`
       : `Your interview for the *${job.title || 'position'}* role${job.department ? ` (${job.department})` : ''} has been scheduled.`
-    return `${greeting}\n\n${body}\n\n*Interview Details:*\n• Type: ${typeName}\n• Date: ${dateDisplay}\n• Time: ${timeDisplay}${meetingLink ? `\n• Link: ${meetingLink}` : ''}${notes ? `\n\nNotes: ${notes}` : ''}\n\nBest regards,\nTalentOS Team`
+    return `${greeting}\n\n${body}\n\n*Interview Details:*\n• Type: ${typeName}\n• Date: ${dateDisplay}\n• Time: ${timeDisplay}${meetingLink ? `\n• Link: ${meetingLink}` : ''}${notes ? `\n\nNotes: ${notes}` : ''}\n\nBest regards,\nMr. Manager Team`
   }
 
   async function handleSchedule() {
@@ -431,12 +450,13 @@ export default function Interviews() {
                 <Phone size={13} style={{ color: 'var(--success)' }} /> Call
               </a>
 
-              <a href={email ? `mailto:${email}?subject=Regarding your interview` : undefined}
-                onClick={!email ? e => { e.preventDefault(); alert('No email on file for this candidate.') } : undefined}
+              <button
+                type="button"
+                onClick={() => openInterviewEmail(email, name, job.title)}
                 className="btn btn-ghost btn-sm"
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none', color: 'inherit' }}>
                 <Mail size={13} style={{ color: 'var(--brand)' }} /> Email
-              </a>
+              </button>
 
               <a href={waNumber ? `https://wa.me/${waNumber}?text=Hi ${encodeURIComponent(name)}, we'd like to confirm your interview schedule.` : undefined}
                 onClick={!waNumber ? e => { e.preventDefault(); alert('No phone number on file for this candidate.') } : undefined}

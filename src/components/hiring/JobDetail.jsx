@@ -5,7 +5,14 @@ import { fetchJobs, fetchApplicationsForJob, fetchAllApplications, fetchCandidat
 import { screenResume, generateJD } from '../../lib/claude.js'
 import { extractText, nameFromFile } from '../../lib/fileExtract.js'
 import { sendConsentEmail, sendInterviewEmail, sendOfferEmail } from '../../lib/resend.js'
+import { extractCandidateEmail, buildEmailDraft } from '../../lib/emailUtils.js'
 import { ChevronLeft, Upload, Sparkles, Mail, Calendar, CheckCircle, XCircle, FileText, Loader, Send, Star, X, Pencil, RefreshCw, Phone, MessageCircle, Video, GraduationCap, ChevronDown, Download, AlertTriangle, Plus, Trash2, Search, SlidersHorizontal } from 'lucide-react'
+
+function getDisplayName(fullName) {
+  const trimmed = (fullName || '').trim()
+  if (!trimmed) return ''
+  return trimmed.split(/\s+/)[0]
+}
 
 export default function JobDetail() {
   const { id } = useParams()
@@ -331,9 +338,8 @@ export default function JobDetail() {
         setUploadRows(prev => prev.map((r, j) => j === idx ? { ...r, cvText, status: 'saving', msg: 'Saving…' } : r))
 
         // Parse email + phone from CV text
-        const emailMatch = cvText.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/)
         const phoneMatch = cvText.match(/(?:\+?91[-.\s]?)?[6-9]\d{9}|(?:\+?[1-9]\d{0,2}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/)
-        const extractedEmail = emailMatch ? emailMatch[0] : placeholderEmail
+        const extractedEmail = extractCandidateEmail(cvText, placeholderEmail)
         const extractedPhone = phoneMatch ? phoneMatch[0].replace(/[-.\s]/g, '').trim() : null
 
         // Step 2 — create candidate + application in one shot
@@ -346,6 +352,20 @@ export default function JobDetail() {
       } catch (e) {
         setUploadRows(prev => prev.map((r, j) => j === idx ? { ...r, status: 'error', msg: e.message || 'Failed' } : r))
       }
+    }
+  }
+
+  function openEmailComposer(candidate, jobTitle, type = 'hiring') {
+    const recipientEmail = candidate?.email || ''
+    const draft = buildEmailDraft({ type, recipientEmail, name: candidate?.name, jobTitle })
+    const mailtoUrl = `mailto:${encodeURIComponent(draft.to)}?subject=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`
+    const gmailUrl = `https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(draft.to)}&su=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`
+    const outlookUrl = `https://outlook.live.com/mail/0/deeplink/compose?to=${encodeURIComponent(draft.to)}&subject=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`
+
+    const popup = window.open(mailtoUrl, '_blank', 'noopener,noreferrer')
+    if (!popup) {
+      const useGmail = window.confirm('Your mail app did not open. Would you like to continue with Gmail webmail?')
+      window.open(useGmail ? gmailUrl : outlookUrl, '_blank', 'noopener,noreferrer')
     }
   }
 
@@ -643,6 +663,7 @@ export default function JobDetail() {
               const phone       = candidate.phone
               const email       = candidate.email
               const name        = candidate.name || ''
+              const displayName = getDisplayName(name)
               const waNumber    = phone?.replace(/[^0-9]/g, '')
               const consented   = app.consent_status === 'accepted'
 
@@ -658,9 +679,9 @@ export default function JobDetail() {
                     onChange={() => toggleSelect(app.id)}
                     style={{ width: 16, height: 16, accentColor: 'var(--brand)', cursor: 'pointer', flexShrink: 0 }}
                   />
-                  <div className="avatar">{name.split(' ').map(w => w[0]).join('').slice(0, 2)}</div>
+                  <div className="avatar">{displayName.split(' ').map(w => w[0]).join('').slice(0, 2)}</div>
                   <div style={{ flex: 1, minWidth: 140 }}>
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>{name}</div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{displayName}</div>
                     <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{email}</div>
                     {phone && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{phone}</div>}
                   </div>
@@ -704,15 +725,15 @@ export default function JobDetail() {
                   >
                     <Phone size={13} style={{ color: 'var(--success)' }} /> Call
                   </a>
-                  <a
-                    href={email ? `mailto:${email}?subject=Regarding your application for ${job.title}` : undefined}
-                    onClick={!email ? e => { e.preventDefault(); alert('No email on file for this candidate.') } : undefined}
+                  <button
+                    type="button"
+                    onClick={() => openEmailComposer(candidate, job.title, 'hiring')}
                     className="btn btn-ghost btn-sm"
                     title="Email candidate"
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none', color: 'inherit' }}
                   >
                     <Mail size={13} style={{ color: 'var(--brand)' }} /> Email
-                  </a>
+                  </button>
                   <a
                     href={waNumber ? `https://wa.me/${waNumber}?text=Hi ${encodeURIComponent(name)}, we'd like to discuss your application for the ${encodeURIComponent(job.title)} role.` : undefined}
                     onClick={!waNumber ? e => { e.preventDefault(); alert('No phone number on file for this candidate.') } : undefined}

@@ -18,7 +18,7 @@ export default function LoadingScreen() {
         <span style={{ color: '#fff', fontWeight: 800, fontSize: 22, fontFamily: 'var(--font-display)' }}>T</span>
       </div>
       <div className="spinner" style={{ width: 24, height: 24 }} />
-      <p style={{ color: 'var(--text-3)', fontSize: 13 }}>Loading TalentOS…</p>
+      <p style={{ color: 'var(--text-3)', fontSize: 13 }}>Loading Mr. Manager…</p>
     </div>
   )
 }

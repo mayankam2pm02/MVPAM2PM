@@ -1,7 +1,7 @@
 const RESEND_API = 'https://api.resend.com/emails'
 const API_KEY    = import.meta.env.VITE_RESEND_API_KEY
 const APP_URL    = import.meta.env.VITE_APP_URL || 'http://localhost:3000'
-const COMPANY    = import.meta.env.VITE_COMPANY_NAME || 'TalentOS'
+const COMPANY    = import.meta.env.VITE_COMPANY_NAME || 'Mr. Manager'
 const FROM_EMAIL = 'hiring@talentos.app' // Update with your verified Resend domain
 
 async function sendEmail({ to, subject, html }) {
@@ -37,8 +37,8 @@ export async function sendConsentEmail({ candidateName, candidateEmail, jobTitle
 <body style="margin:0;padding:0;background:#F8F9FC;font-family:Inter,system-ui,sans-serif;">
   <div style="max-width:560px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #E4E7EF;">
     <div style="background:#4F46E5;padding:32px 40px;">
-      <div style="font-size:22px;font-weight:800;color:#fff;letter-spacing:-0.3px;">TalentOS</div>
-      <div style="font-size:13px;color:rgba(255,255,255,0.7);margin-top:4px;">${COMPANY} — HR Platform</div>
+      <div style="font-size:22px;font-weight:800;color:#fff;letter-spacing:-0.3px;">Mr. Manager</div>
+      <div style="font-size:13px;color:rgba(255,255,255,0.7);margin-top:4px;">${COMPANY} — your virtual manager</div>
     </div>
     <div style="padding:40px;">
       <h2 style="margin:0 0 16px;font-size:20px;color:#0F1117;">Hi ${candidateName} 👋</h2>
@@ -69,7 +69,7 @@ export async function sendConsentEmail({ candidateName, candidateEmail, jobTitle
     </div>
     <div style="background:#F8F9FC;padding:20px 40px;border-top:1px solid #E4E7EF;">
       <p style="margin:0;font-size:12px;color:#8B91A8;text-align:center;">
-        Sent by ${COMPANY} via TalentOS Hiring Platform
+        Sent by ${COMPANY} via Mr. Manager, your virtual manager
       </p>
     </div>
   </div>

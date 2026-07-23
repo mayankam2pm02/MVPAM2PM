@@ -46,7 +46,7 @@ export default function Login() {
           }}>
             <span style={{ color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 22 }}>T</span>
           </div>
-          <h1 style={{ fontSize: 26, marginBottom: 6 }}>TalentOS</h1>
+          <h1 style={{ fontSize: 26, marginBottom: 6 }}>Mr. Manager</h1>
           <p style={{ color: 'var(--text-3)', fontSize: 14 }}>Sign in to your workspace</p>
         </div>
 

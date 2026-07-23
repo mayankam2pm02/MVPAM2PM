@@ -14,6 +14,7 @@ CREATE TABLE profiles (
   title        TEXT,
   role         TEXT NOT NULL DEFAULT 'interviewer'
                  CHECK (role IN ('admin','hr','manager','interviewer','employee')),
+  permissions  JSONB DEFAULT '{}'::jsonb,
   avatar       TEXT,
   department   TEXT,
   is_active    BOOLEAN DEFAULT true,
@@ -25,12 +26,13 @@ CREATE TABLE profiles (
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO profiles (id, email, name, role)
+  INSERT INTO profiles (id, email, name, role, permissions)
   VALUES (
     NEW.id,
     NEW.email,
     COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)),
-    COALESCE(NEW.raw_user_meta_data->>'role', 'interviewer')
+    COALESCE(NEW.raw_user_meta_data->>'role', 'interviewer'),
+    COALESCE(NEW.raw_user_meta_data->'permissions', '{}'::jsonb)
   );
   RETURN NEW;
 END;
