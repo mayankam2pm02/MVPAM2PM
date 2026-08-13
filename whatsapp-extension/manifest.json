@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Mr. Manager WhatsApp Web Sync",
+  "version": "1.0.0",
+  "description": "Links your real WhatsApp Web session to Mr. Manager to send and track outreach campaigns.",
+  "permissions": [
+    "tabs",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://web.whatsapp.com/*",
+    "http://localhost:3000/*",
+    "http://localhost:3001/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://web.whatsapp.com/*",
+        "http://localhost:3000/*",
+        "http://localhost:3001/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ]
+}

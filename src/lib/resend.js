@@ -24,11 +24,41 @@ async function sendEmail({ to, subject, html }) {
   return data
 }
 
+function openMailto({ to, subject, body }) {
+  const mailtoUrl = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+  window.open(mailtoUrl, '_blank')
+}
+
 // ─── CONSENT EMAIL ────────────────────────────────────────────
 
 export async function sendConsentEmail({ candidateName, candidateEmail, jobTitle, jobLocation, salary, consentToken }) {
   const acceptUrl  = `${APP_URL}/consent?token=${consentToken}&action=accept`
   const declineUrl = `${APP_URL}/consent?token=${consentToken}&action=decline`
+
+  if (!API_KEY) {
+    const body = `Hi ${candidateName} 👋,
+
+We've reviewed your profile and believe you'd be a great fit for the ${jobTitle} position at ${COMPANY}.
+
+Job Details:
+- Role: ${jobTitle}
+- Location: ${jobLocation}
+- Salary: ${salary}
+
+Please let us know your interest by clicking one of the links below:
+
+Option 1: Yes, I am interested (Accept):
+${acceptUrl}
+
+Option 2: No, not right now (Decline):
+${declineUrl}
+
+Best regards,
+The ${COMPANY} Hiring Team`
+    
+    openMailto({ to: candidateEmail, subject: `Job opportunity — ${jobTitle} at ${COMPANY}`, body })
+    return { simulated: true, mailto: true }
+  }
 
   const html = `
 <!DOCTYPE html>
@@ -82,6 +112,26 @@ export async function sendConsentEmail({ candidateName, candidateEmail, jobTitle
 // ─── OFFER EMAIL ──────────────────────────────────────────────
 
 export async function sendOfferEmail({ candidateName, candidateEmail, jobTitle, salary, startDate }) {
+  if (!API_KEY) {
+    const body = `Dear ${candidateName},
+
+We are delighted to offer you the position of ${jobTitle} at ${COMPANY}. We were impressed by your background and are excited to have you join our team.
+
+Offer Summary:
+- Position: ${jobTitle}
+- Compensation: ${salary}
+${startDate ? `- Start Date: ${startDate}\n` : ''}
+Please confirm your acceptance by replying directly to this email.
+
+Welcome to the team!
+
+Best regards,
+The ${COMPANY} Team`
+    
+    openMailto({ to: candidateEmail, subject: `Your offer — ${jobTitle} at ${COMPANY}`, body })
+    return { simulated: true, mailto: true }
+  }
+
   const html = `
 <!DOCTYPE html>
 <html>
@@ -119,6 +169,26 @@ export async function sendOfferEmail({ candidateName, candidateEmail, jobTitle, 
 // ─── INTERVIEW SCHEDULE EMAIL ─────────────────────────────────
 
 export async function sendInterviewEmail({ candidateName, candidateEmail, jobTitle, interviewDate, interviewerName }) {
+  if (!API_KEY) {
+    const body = `Hi ${candidateName},
+
+Your interview for the ${jobTitle} role has been scheduled:
+
+Interview Details:
+- Date & Time: ${interviewDate}
+- Role: ${jobTitle}
+${interviewerName ? `- Interviewer: ${interviewerName}\n` : ''}
+Please prepare to discuss your experience. If you need to reschedule, reply directly to this email.
+
+Best of luck!
+
+Best regards,
+The ${COMPANY} Hiring Team`
+
+    openMailto({ to: candidateEmail, subject: `Interview scheduled — ${jobTitle} at ${COMPANY}`, body })
+    return { simulated: true, mailto: true }
+  }
+
   const html = `
 <!DOCTYPE html>
 <html>

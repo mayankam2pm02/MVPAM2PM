@@ -1,0 +1,7 @@
+- [x] Implement dynamic vector illustration swapping in `Sidebar.jsx` based on current path
+- [x] Implement Candidate header (JD match button + import button) in `Candidates.jsx`
+- [x] Implement the 4 summary metrics cards (Total, Shortlisted, Avg. score, Top rated)
+- [x] Update `src/pages/JobPortals.jsx` to show and copy live application links. the filters row
+- [x] Refactor candidate list cards layout to match reference: avatar with active dot, rating stars, circular match scores progress gauge, view profile and action buttons
+- [x] Implement pagination controls at the bottom of the candidates database
+- [x] Verify the layout and dynamic operations in the browser

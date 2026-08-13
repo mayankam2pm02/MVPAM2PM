@@ -26,7 +26,7 @@ End-to-end virtual manager covering hiring, AI resume screening, training, CRM, 
 
 ## Setup
 
-### 1. Clone & install
+### 1. Clone & install dependencies
 
 ```bash
 git clone https://github.com/YOUR_USERNAME/talentos-mvp.git
@@ -51,13 +51,24 @@ VITE_APP_URL=http://localhost:3000
 VITE_COMPANY_NAME=Your Company Name
 ```
 
+> [!NOTE]
+> **LocalStorage Fallback (Preview Mode)**: If you run the project without configuring Supabase environment variables, the system automatically falls back to a mock local database persisted in your browser's `localStorage`. All features (including candidate creation, job portals, and settings) remain fully operational for preview testing.
+
 ### 3. Database setup
 
 1. Create a project at [supabase.com](https://supabase.com)
 2. Go to **SQL Editor** and run the contents of `supabase/schema.sql`
 3. Go to **SQL Editor** and run `supabase/seed.sql` for demo data
 
-### 4. Run locally
+### 4. Install WhatsApp Web Sync Extension
+
+To sync real WhatsApp Web notifications and automate campaigns:
+1. Open Google Chrome and navigate to `chrome://extensions/`.
+2. Toggle on **Developer mode** (top-right corner).
+3. Click **Load unpacked** (top-left corner).
+4. Select the [whatsapp-extension](file:///Users/sujaydey/Documents/cosphere/whatsapp-extension) directory from this cloned project.
+
+### 5. Run locally
 
 ```bash
 npm run dev
@@ -65,10 +76,11 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000)
 
-### 5. Deploy to Vercel
+### 6. Deploy to Vercel
 
 ```bash
 npm install -g vercel
+# Run vercel setup
 vercel --prod
 ```
 

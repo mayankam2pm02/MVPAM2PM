@@ -5,6 +5,7 @@ import { fetchJobs, fetchApplicationsForJob, fetchAllApplications, fetchCandidat
 import { screenResume, generateJD } from '../../lib/claude.js'
 import { extractText, nameFromFile } from '../../lib/fileExtract.js'
 import { sendConsentEmail, sendInterviewEmail, sendOfferEmail } from '../../lib/resend.js'
+import { sendWhatsAppMessage } from '../../lib/twilio.js'
 import { extractCandidateEmail, buildEmailDraft } from '../../lib/emailUtils.js'
 import { ChevronLeft, Upload, Sparkles, Mail, Calendar, CheckCircle, XCircle, FileText, Loader, Send, Star, X, Pencil, RefreshCw, Phone, MessageCircle, Video, GraduationCap, ChevronDown, Download, AlertTriangle, Plus, Trash2, Search, SlidersHorizontal } from 'lucide-react'
 
@@ -225,6 +226,40 @@ export default function JobDetail() {
       const updated = await updateApplication(app.id, { consent_status: 'pending', consent_sent_at: new Date().toISOString(), status: 'consent_sent' })
       setApps(prev => prev.map(a => a.id === app.id ? updated : a))
     } catch (e) { setError('Email failed: ' + e.message) }
+  }
+
+  async function sendWhatsAppConsent(app) {
+    if (!app.candidates?.phone) {
+      setError('No phone number available for this candidate.')
+      return
+    }
+    const appUrl = import.meta.env.VITE_APP_URL || window.location.origin
+    const company = import.meta.env.VITE_COMPANY_NAME || 'Mr. Manager'
+    const acceptUrl = `${appUrl}/consent?token=${app.consent_token}&action=accept`
+    const declineUrl = `${appUrl}/consent?token=${app.consent_token}&action=decline`
+    
+    const body = `Hi ${app.candidates.name} 👋,
+
+We've reviewed your profile and believe you'd be a great fit for the ${job.title} position at ${company}.
+
+Please let us know your interest by clicking one of the links below:
+
+Option 1: Yes, I'm interested (Accept):
+${acceptUrl}
+
+Option 2: No, not right now (Decline):
+${declineUrl}
+
+Best regards,
+The ${company} Hiring Team`
+
+    try {
+      await sendWhatsAppMessage({ to: app.candidates.phone, body })
+      const updated = await updateApplication(app.id, { consent_status: 'pending', consent_sent_at: new Date().toISOString(), status: 'consent_sent' })
+      setApps(prev => prev.map(a => a.id === app.id ? updated : a))
+    } catch (e) {
+      setError('WhatsApp send failed: ' + e.message)
+    }
   }
 
   async function scheduleInterview(app) {
@@ -757,8 +792,23 @@ export default function JobDetail() {
 
                   {/* Send Consent — explicit email action kept separate */}
                   {app.screen_recommendation === 'shortlist' && app.consent_status === 'not_sent' && (
-                    <button className="btn btn-secondary btn-sm" onClick={() => sendConsent(app)}>
-                      <Mail size={13} /> Send Consent
+                    <div style={{ display: 'inline-flex', gap: 6 }}>
+                      <button className="btn btn-secondary btn-sm" onClick={() => sendConsent(app)}>
+                        <Mail size={13} /> Send Consent
+                      </button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => sendWhatsAppConsent(app)} style={{ color: '#16A34A', borderColor: '#BBF7D0', background: '#F0FDF4' }}>
+                        <MessageCircle size={13} /> WhatsApp
+                      </button>
+                    </div>
+                  )}
+
+                  {app.consent_status === 'pending' && (
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => window.open(`${window.location.origin}/consent?token=${app.consent_token}&action=accept`, '_blank')}
+                      style={{ color: '#2563EB', borderColor: '#BFDBFE', background: '#EFF6FF', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    >
+                      Simulate Accept
                     </button>
                   )}
 

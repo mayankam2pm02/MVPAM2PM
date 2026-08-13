@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   fetchEmployees, fetchTrainingModules, createEmployee, fetchCandidatesForTraining,
-  createTrainingModule, uploadTrainingFile, updateEmployee
+  createTrainingModule, uploadTrainingFile, updateEmployee,
+  fetchTrainingProgress, upsertTrainingProgress
 } from '../lib/supabase.js'
 import {
   GraduationCap, PlayCircle, FileText, CheckCircle, Clock,
   ChevronDown, ChevronUp, Send, AlertCircle, UserPlus, X,
-  Users, User, Upload, Video, BookOpen, Plus, Circle, Square, Camera, RefreshCw, Pause, Play
+  Users, User, Upload, Video, BookOpen, Plus, Circle, Square, Camera, RefreshCw, Pause, Play,
+  Award, Shield, Heart, Search, ArrowRight, CheckSquare, Sparkles, Filter
 } from 'lucide-react'
 
 // ─── CONSTANTS ────────────────────────────────────────────────
@@ -88,78 +90,97 @@ function AddEmployeeModal({ onClose, onAdded }) {
   }
 
   return (
-    <Modal title={<><UserPlus size={18} color="var(--brand)"/> Add Employee to Training</>} onClose={onClose} width={560}>
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', padding: '0 1.5rem', gap: 4 }}>
-        {[['candidate', 'From Candidates', <Users size={13}/>], ['manual', 'Add Manually', <User size={13}/>]].map(([m, label, icon]) => (
-          <button key={m} onClick={() => { setMode(m); setSelected(null); setError('') }}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 14px', fontSize: 13,
-              fontWeight: mode === m ? 700 : 400, color: mode === m ? 'var(--brand)' : 'var(--text-3)',
-              background: 'none', border: 'none', cursor: 'pointer',
-              borderBottom: mode === m ? '2px solid var(--brand)' : '2px solid transparent' }}>
-            {icon} {label}
-          </button>
-        ))}
-      </div>
-      <div style={{ padding: '1.5rem', overflowY: 'auto', maxHeight: '52vh' }}>
-        {mode === 'candidate' && (
-          <div>
-            <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: '1rem' }}>Select a shortlisted or hired candidate from the pipeline to enroll in training.</p>
-            {loadingC && <div style={{ color: 'var(--text-3)', fontSize: 13 }}>Loading…</div>}
-            {!loadingC && candidates.length === 0 && (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-3)', border: '1px dashed var(--border)', borderRadius: 8 }}>
-                <GraduationCap size={28} style={{ marginBottom: 8, opacity: .4 }}/><br/>No shortlisted/hired candidates available yet.
-              </div>
-            )}
-            {candidates.map(app => {
-              const c = app.candidates; const isSel = selected?.id === app.id
-              return (
-                <div key={app.id} onClick={() => setSelected(isSel ? null : app)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 8, marginBottom: 6,
-                    cursor: 'pointer', border: isSel ? '1.5px solid var(--brand)' : '1px solid var(--border)',
-                    background: isSel ? 'rgba(99,102,241,.06)' : '#fff' }}>
-                  <div className="avatar" style={{ width: 36, height: 36, fontSize: 12, flexShrink: 0 }}>
-                    {c?.name?.split(' ').map(w => w[0]).join('').slice(0, 2) || '?'}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{c?.name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-3)', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      {app.jobs?.title} {app.jobs?.department && `· ${app.jobs.department}`}
-                      <span className={`badge badge-${STATUS_COLORS[app.status] || 'gray'}`} style={{ fontSize: 10 }}>{app.status?.replace(/_/g, ' ')}</span>
-                    </div>
-                  </div>
-                  {isSel && <CheckCircle size={16} color="var(--brand)"/>}
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16, backdropFilter: 'blur(2px)' }}>
+      <div style={modalBox(560)}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, flexShrink: 0 }}>
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <UserPlus size={18} color="#4F46E5" /> Add Employee to Training
+          </h2>
+          <button className="btn btn-ghost" onClick={onClose}><X size={16} /></button>
+        </div>
+
+        <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: 16, gap: 4 }}>
+          {[['candidate', 'From Candidates', <Users size={13}/>], ['manual', 'Add Manually', <User size={13}/>]].map(([m, label, icon]) => (
+            <button key={m} onClick={() => { setMode(m); setSelected(null); setError('') }}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 14px', fontSize: 13,
+                fontWeight: mode === m ? 700 : 500, color: mode === m ? '#4F46E5' : 'var(--text-3)',
+                background: 'none', border: 'none', cursor: 'pointer',
+                borderBottom: mode === m ? '2px solid #4F46E5' : '2px solid transparent' }}>
+              {icon} {label}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ overflowY: 'auto', flex: 1, maxHeight: '52vh' }}>
+          {mode === 'candidate' && (
+            <div>
+              <p style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 12 }}>Select a shortlisted or hired candidate from the pipeline to enroll in training.</p>
+              {loadingC && <div style={{ color: 'var(--text-3)', fontSize: 13 }}>Loading candidates…</div>}
+              {!loadingC && candidates.length === 0 && (
+                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-3)', border: '1px dashed var(--border)', borderRadius: 8 }}>
+                  <GraduationCap size={28} style={{ marginBottom: 8, opacity: .4 }}/><br/>No candidates ready for training.
                 </div>
-              )
-            })}
-          </div>
-        )}
-        {mode === 'manual' && (
-          <div>
-            <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: '1.25rem' }}>Add a new employee directly without going through the hiring pipeline.</p>
-            <div className="form-row">
-              <div className="form-group"><label>Full name *</label><input value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Rahul Sharma"/></div>
-              <div className="form-group"><label>Profile / Role *</label><input value={form.profile} onChange={e => set('profile', e.target.value)} placeholder="e.g. Sales Executive"/></div>
+              )}
+              {candidates.map(app => {
+                const c = app.candidates; const isSel = selected?.id === app.id
+                return (
+                  <div key={app.id} onClick={() => setSelected(isSel ? null : app)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 8, marginBottom: 6,
+                      cursor: 'pointer', border: isSel ? '1.5px solid #4F46E5' : '1px solid var(--border)',
+                      background: isSel ? 'rgba(79,70,229,.04)' : '#fff' }}>
+                    <div className="avatar" style={{ width: 36, height: 36, fontSize: 12, flexShrink: 0 }}>
+                      {c?.name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?'}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{c?.name}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-3)', display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
+                        {app.jobs?.title} {app.jobs?.department && `· ${app.jobs.department}`}
+                        <span className={`badge badge-${STATUS_COLORS[app.status] || 'gray'}`} style={{ fontSize: 10 }}>{app.status?.replace(/_/g, ' ')}</span>
+                      </div>
+                    </div>
+                    {isSel && <CheckCircle size={16} color="#4F46E5"/>}
+                  </div>
+                )
+              })}
             </div>
-            <div className="form-row">
-              <div className="form-group"><label>Mobile no</label><input value={form.mobile} onChange={e => set('mobile', e.target.value)} placeholder="+91 98765 43210"/></div>
-              <div className="form-group"><label>Email ID *</label><input type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="rahul@company.com"/></div>
+          )}
+          {mode === 'manual' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <p style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 4 }}>Add a new employee directly without going through the hiring pipeline.</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div><label style={{ fontSize: 12, color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Full name *</label><input value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Rahul Sharma" style={{ width: '100%', borderRadius: 8 }}/></div>
+                <div><label style={{ fontSize: 12, color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Profile / Role *</label><input value={form.profile} onChange={e => set('profile', e.target.value)} placeholder="e.g. Sales Executive" style={{ width: '100%', borderRadius: 8 }}/></div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div><label style={{ fontSize: 12, color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Mobile no</label><input value={form.mobile} onChange={e => set('mobile', e.target.value)} placeholder="+91 98765 43210" style={{ width: '100%', borderRadius: 8 }}/></div>
+                <div><label style={{ fontSize: 12, color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Email ID *</label><input type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="rahul@company.com" style={{ width: '100%', borderRadius: 8 }}/></div>
+              </div>
             </div>
-          </div>
-        )}
-        {error && <div style={{ background: 'var(--danger-bg)', color: 'var(--danger)', padding: '8px 12px', borderRadius: 6, fontSize: 13, marginTop: 8 }}>{error}</div>}
+          )}
+          {error && <div style={{ background: 'var(--danger-bg)', color: 'var(--danger)', padding: '8px 12px', borderRadius: 6, fontSize: 13, marginTop: 8 }}>{error}</div>}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          {mode === 'candidate'
+            ? <button className="btn btn-primary" onClick={enrollCandidate} disabled={!selected || saving}>{saving ? 'Enrolling…' : <><GraduationCap size={14} style={{ marginRight: 5 }}/> Enroll</>}</button>
+            : <button className="btn btn-primary" onClick={addManually} disabled={saving}>{saving ? 'Adding…' : <><UserPlus size={14} style={{ marginRight: 5 }}/> Add Employee</>}</button>}
+        </div>
       </div>
-      <ModalFooter onClose={onClose}>
-        {mode === 'candidate'
-          ? <button className="btn btn-primary" onClick={enrollCandidate} disabled={!selected || saving}>{saving ? 'Enrolling…' : <><GraduationCap size={14}/> Enroll in Training</>}</button>
-          : <button className="btn btn-primary" onClick={addManually} disabled={saving}>{saving ? 'Adding…' : <><UserPlus size={14}/> Add Employee</>}</button>}
-      </ModalFooter>
-    </Modal>
+    </div>
   )
+}
+
+function modalBox(maxWidth = 560) {
+  return {
+    background: '#ffffff', borderRadius: 16, padding: '24px',
+    width: '100%', maxWidth, boxShadow: '0 24px 64px rgba(0,0,0,0.2)',
+    maxHeight: '90vh', display: 'flex', flexDirection: 'column'
+  }
 }
 
 // ─── ADD TRAINING CONTENT MODAL ──────────────────────────────
 
-// Format seconds as MM:SS
 function fmtTime(s) {
   const m = Math.floor(s / 60).toString().padStart(2, '0')
   const sec = (s % 60).toString().padStart(2, '0')
@@ -176,14 +197,14 @@ function AddContentModal({ onClose, onAdded }) {
   const [progress, setProgress]   = useState('')
   const [error, setError]         = useState('')
 
-  // Live recorder state
-  const [videoTab, setVideoTab]       = useState('upload')  // 'upload' | 'record'
-  const [recState, setRecState]       = useState('idle')     // 'idle'|'requesting'|'ready'|'recording'|'paused'|'done'
+  const [videoTab, setVideoTab]       = useState('upload')
+  const [recState, setRecState]       = useState('idle')
   const [recPaused, setRecPaused]     = useState(false)
   const [recTime, setRecTime]         = useState(0)
   const [recordedUrl, setRecordedUrl] = useState(null)
 
   const previewRef  = useRef(null)
+  const playbackRef = useRef(null)
   const streamRef   = useRef(null)
   const recorderRef = useRef(null)
   const chunksRef   = useRef([])
@@ -200,7 +221,6 @@ function AddContentModal({ onClose, onAdded }) {
 
   useEffect(() => () => stopStream(), [])
 
-  // ← THE KEY FIX: attach stream to video element AFTER React renders it
   useEffect(() => {
     if ((recState === 'ready' || recState === 'recording' || recState === 'paused') &&
         previewRef.current && streamRef.current) {
@@ -231,7 +251,7 @@ function AddContentModal({ onClose, onAdded }) {
         audio: true
       })
       streamRef.current = stream
-      setRecState('ready')   // useEffect above will attach stream once video element is in DOM
+      setRecState('ready')
     } catch (e) {
       setError('Camera access denied or not available. ' + (e.message || ''))
       setRecState('idle')
@@ -292,7 +312,6 @@ function AddContentModal({ onClose, onAdded }) {
     clearInterval(timerRef.current)
     recorderRef.current?.stop()
     stopStream()
-    // recState → 'done' is set inside recorder.onstop
   }
 
   function reRecord() {
@@ -338,256 +357,155 @@ function AddContentModal({ onClose, onAdded }) {
   }
 
   return (
-    <Modal title={<><Upload size={18} color="var(--brand)"/> Add Training Content</>} onClose={onClose} width={560}>
-      <div style={{ padding: '1.5rem', overflowY: 'auto', maxHeight: 'calc(90vh - 120px)' }}>
-
-        {/* ── Content type tabs ── */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: '1.25rem' }}>
-          {[
-            ['video',    'Training Video',    <Video size={14}/>],
-            ['document', 'Training Document', <FileText size={14}/>],
-          ].map(([v, l, icon]) => (
-            <button key={v} onClick={() => { set('type', v); setFile(null); switchVideoTab('upload') }}
-              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                padding: '9px 12px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                border: form.type === v ? '2px solid var(--brand)' : '1px solid var(--border)',
-                background: form.type === v ? 'rgba(99,102,241,.07)' : '#fff',
-                color: form.type === v ? 'var(--brand)' : 'var(--text-2)' }}>
-              {icon} {l}
-            </button>
-          ))}
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16, backdropFilter: 'blur(2px)' }}>
+      <div style={modalBox(560)}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, flexShrink: 0 }}>
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Upload size={18} color="#4F46E5"/> Add Training Content
+          </h2>
+          <button className="btn btn-ghost" onClick={onClose}><X size={16}/></button>
         </div>
 
-        {/* ── Video sub-tabs: Upload vs Record ── */}
-        {form.type === 'video' && (
-          <div style={{ display: 'flex', gap: 6, marginBottom: '1.25rem', padding: '4px', background: 'var(--bg-2)', borderRadius: 8, border: '1px solid var(--border)' }}>
+        <div style={{ overflowY: 'auto', flex: 1 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
             {[
-              ['upload', <Upload size={13}/>, 'Upload File'],
-              ['record', <Camera size={13}/>, 'Record Live'],
-            ].map(([tab, icon, label]) => (
-              <button key={tab} onClick={() => switchVideoTab(tab)}
-                style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-                  padding: '7px 10px', borderRadius: 6, fontSize: 13, fontWeight: videoTab === tab ? 700 : 500, cursor: 'pointer',
-                  border: 'none', background: videoTab === tab ? '#ffffff' : 'transparent',
-                  color: videoTab === tab ? 'var(--brand)' : 'var(--text-3)',
-                  boxShadow: videoTab === tab ? '0 1px 4px rgba(0,0,0,.12)' : 'none',
-                  transition: 'all .15s' }}>
-                {icon} {label}
+              ['video',    'Training Video',    <Video size={14}/>],
+              ['document', 'Training Document', <FileText size={14}/>],
+            ].map(([v, l, icon]) => (
+              <button key={v} onClick={() => { set('type', v); setFile(null); switchVideoTab('upload') }}
+                style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  padding: '9px 12px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  border: form.type === v ? '2px solid #4F46E5' : '1px solid var(--border)',
+                  background: form.type === v ? 'rgba(79,70,229,.07)' : '#fff',
+                  color: form.type === v ? '#4F46E5' : 'var(--text-2)' }}>
+                {icon} {l}
               </button>
             ))}
           </div>
-        )}
 
-        {/* ── Upload tab ── */}
-        {(form.type === 'document' || videoTab === 'upload') && (
-          <div className="form-group">
-            <label>Upload file *</label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px',
-              border: '1.5px dashed var(--border)', borderRadius: 8, cursor: 'pointer',
-              background: file ? 'rgba(34,197,94,.06)' : 'var(--bg-2)' }}>
-              <input type="file" accept={form.type === 'video' ? accept : docAccept} style={{ display: 'none' }}
-                onChange={e => { const f = e.target.files?.[0]; if (f) setFile(f) }}/>
-              {file
-                ? <><CheckCircle size={15} color="var(--success)"/>
-                    <span style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>{file.name}</span>
-                    <span style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 'auto' }}>{(file.size/1024/1024).toFixed(1)} MB</span></>
-                : <><Upload size={15} color="var(--text-3)"/>
-                    <span style={{ fontSize: 13, color: 'var(--text-3)' }}>
-                      Click to select {form.type === 'video' ? 'video (MP4, WebM, MOV)' : 'document (PDF, DOC, DOCX)'}
-                    </span></>}
-            </label>
-          </div>
-        )}
-
-        {/* ── Record Live tab — shown BEFORE form fields so buttons are immediately visible ── */}
-        {form.type === 'video' && videoTab === 'record' && (
-          <div style={{ marginBottom: '1rem' }}>
-
-            {/* Quality note */}
-            <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 5 }}>
-              <Camera size={11}/> Records at 640×480 · 24fps · 600 kbps — medium quality, compact file size
+          {form.type === 'video' && (
+            <div style={{ display: 'flex', gap: 6, marginBottom: 16, padding: '4px', background: '#F3F4F6', borderRadius: 8 }}>
+              {[
+                ['upload', <Upload size={13}/>, 'Upload File'],
+                ['record', <Camera size={13}/>, 'Record Live'],
+              ].map(([tab, icon, label]) => (
+                <button key={tab} onClick={() => switchVideoTab(tab)}
+                  style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                    padding: '7px 10px', borderRadius: 6, fontSize: 13, fontWeight: videoTab === tab ? 700 : 500, cursor: 'pointer',
+                    border: 'none', background: videoTab === tab ? '#ffffff' : 'transparent',
+                    color: videoTab === tab ? '#4F46E5' : 'var(--text-3)',
+                    boxShadow: videoTab === tab ? '0 1px 4px rgba(0,0,0,.12)' : 'none',
+                    transition: 'all .15s' }}>
+                  {icon} {label}
+                </button>
+              ))}
             </div>
+          )}
 
-            {/* Idle: start camera button */}
-            {recState === 'idle' && (
-              <button onClick={startCamera} className="btn btn-secondary"
-                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '14px', fontSize: 14 }}>
-                <Camera size={16}/> Start Camera
-              </button>
-            )}
+          {(form.type === 'document' || videoTab === 'upload') && (
+            <div className="form-group" style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 12, color: 'var(--text-3)', marginBottom: 6 }}>Upload file *</label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px',
+                border: '1.5px dashed var(--border)', borderRadius: 8, cursor: 'pointer',
+                background: file ? 'rgba(34,197,94,.06)' : '#F8F9FC' }}>
+                <input type="file" accept={form.type === 'video' ? accept : docAccept} style={{ display: 'none' }}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) setFile(f) }}/>
+                {file
+                  ? <><CheckCircle size={15} color="#10B981"/>
+                      <span style={{ fontSize: 13, color: '#10B981', fontWeight: 600 }}>{file.name}</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 'auto' }}>{(file.size/1024/1024).toFixed(1)} MB</span></>
+                  : <><Upload size={15} color="var(--text-3)"/>
+                      <span style={{ fontSize: 13, color: 'var(--text-3)' }}>
+                        Click to select {form.type === 'video' ? 'video' : 'document'}
+                      </span></>}
+              </label>
+            </div>
+          )}
 
-            {/* Requesting camera */}
-            {recState === 'requesting' && (
-              <div style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--text-3)', fontSize: 13 }}>
-                <Camera size={24} style={{ display: 'block', margin: '0 auto 8px', opacity: 0.5 }}/>
-                Requesting camera access…
-              </div>
-            )}
+          {form.type === 'video' && videoTab === 'record' && (
+            <div style={{ marginBottom: 16 }}>
+              {recState === 'idle' && (
+                <button onClick={startCamera} className="btn btn-secondary" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 12 }}>
+                  <Camera size={16}/> Start Camera
+                </button>
+              )}
 
-            {/* Live preview — rendered for 'ready'|'recording'|'paused' so previewRef is valid */}
-            {(recState === 'ready' || recState === 'recording' || recState === 'paused') && (
-              <div>
-                <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', background: '#000', marginBottom: 10 }}>
-                  <video ref={previewRef} muted autoPlay playsInline
-                    style={{ width: '100%', display: 'block', maxHeight: 180, objectFit: 'cover' }}/>
+              {recState === 'requesting' && (
+                <div style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--text-3)' }}>
+                  Requesting camera access…
+                </div>
+              )}
 
-                  {/* REC timer badge */}
+              {(recState === 'ready' || recState === 'recording' || recState === 'paused') && (
+                <div>
+                  <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', background: '#000', marginBottom: 10 }}>
+                    <video ref={previewRef} muted autoPlay playsInline style={{ width: '100%', display: 'block', maxHeight: 180, objectFit: 'cover' }}/>
+                    {recState === 'recording' && (
+                      <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(0,0,0,.65)', color: '#fff', padding: '3px 9px', borderRadius: 20, fontSize: 12 }}>
+                        <Circle size={9} style={{ color: '#ef4444', fill: '#ef4444' }}/>
+                        {fmtTime(recTime)}
+                      </div>
+                    )}
+                  </div>
+
+                  {recState === 'ready' && (
+                    <button onClick={startRecording} className="btn btn-primary" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                      <Circle size={14} style={{ fill: '#fff' }}/> Start Recording
+                    </button>
+                  )}
+
                   {recState === 'recording' && (
-                    <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', alignItems: 'center', gap: 6,
-                      background: 'rgba(0,0,0,.65)', color: '#fff', padding: '3px 9px', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
-                      <Circle size={9} style={{ color: '#ef4444', fill: '#ef4444', animation: 'pulse 1s infinite' }}/>
-                      {fmtTime(recTime)}
-                    </div>
-                  )}
-
-                  {/* PAUSED overlay */}
-                  {recState === 'paused' && (
-                    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-                      alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,.45)', gap: 6 }}>
-                      <Pause size={32} style={{ color: '#fff' }}/>
-                      <span style={{ color: '#fff', fontWeight: 700, fontSize: 13, letterSpacing: 1 }}>PAUSED · {fmtTime(recTime)}</span>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button onClick={pauseRecording} className="btn btn-secondary" style={{ flex: 1 }}><Pause size={14}/> Pause</button>
+                      <button onClick={stopRecording} className="btn btn-primary" style={{ flex: 1, background: '#EF4444' }}><Square size={14}/> Stop</button>
                     </div>
                   )}
                 </div>
+              )}
 
-                {/* Start button when camera is ready */}
-                {recState === 'ready' && (
-                  <button onClick={startRecording} className="btn btn-primary"
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                    <Circle size={14} style={{ fill: '#fff' }}/> Start Recording
-                  </button>
-                )}
-
-                {/* Pause + Stop buttons while recording */}
-                {recState === 'recording' && (
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={pauseRecording}
-                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                        padding: '9px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                        border: '2px solid var(--warning)', background: 'rgba(234,179,8,.08)', color: 'var(--warning)' }}>
-                      <Pause size={14}/> Pause
-                    </button>
-                    <button onClick={stopRecording}
-                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                        padding: '9px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                        border: '2px solid var(--danger)', background: 'rgba(239,68,68,.08)', color: 'var(--danger)' }}>
-                      <Square size={14} style={{ fill: 'var(--danger)' }}/> Stop
-                    </button>
+              {recState === 'done' && recordedUrl && (
+                <div>
+                  <video ref={playbackRef} src={recordedUrl} controls style={{ width: '100%', borderRadius: 10, maxHeight: 180, background: '#000', display: 'block', marginBottom: 10 }}/>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Recording saved ({fmtTime(recTime)})</span>
+                    <button onClick={reRecord} className="btn btn-ghost btn-sm" style={{ color: '#EF4444' }}><RefreshCw size={12}/> Re-record</button>
                   </div>
-                )}
-
-                {/* Resume + Stop buttons while paused */}
-                {recState === 'paused' && (
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={resumeRecording}
-                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                        padding: '9px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                        border: '2px solid var(--brand)', background: 'rgba(99,102,241,.08)', color: 'var(--brand)' }}>
-                      <Play size={14}/> Resume
-                    </button>
-                    <button onClick={stopRecording}
-                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                        padding: '9px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                        border: '2px solid var(--danger)', background: 'rgba(239,68,68,.08)', color: 'var(--danger)' }}>
-                      <Square size={14} style={{ fill: 'var(--danger)' }}/> Stop &amp; Save
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Done — show recorded video preview */}
-            {recState === 'done' && recordedUrl && (
-              <div>
-                <video ref={playbackRef} src={recordedUrl} controls
-                  style={{ width: '100%', borderRadius: 10, maxHeight: 180, background: '#000', display: 'block', marginBottom: 10 }}/>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ flex: 1, fontSize: 12, color: 'var(--text-3)', display: 'flex', gap: 12 }}>
-                    <span><CheckCircle size={12} style={{ color: 'var(--success)', display: 'inline', marginRight: 4 }}/>Recording saved</span>
-                    <span>Duration: <strong>{fmtTime(recTime)}</strong></span>
-                    <span>Size: <strong>{file ? (file.size/1024/1024).toFixed(1) + ' MB' : '—'}</strong></span>
-                  </div>
-                  <button onClick={reRecord} className="btn btn-ghost btn-sm"
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--danger)', whiteSpace: 'nowrap' }}>
-                    <RefreshCw size={12}/> Re-record
-                  </button>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )}
 
-        {/* ── Form fields — below the media section ── */}
-        <div className="form-group">
-          <label>Title *</label>
-          <input value={form.title} onChange={e => set('title', e.target.value)}
-            placeholder={form.type === 'video' ? 'e.g. Product Demo Walkthrough' : 'e.g. Sales Process Guide'}/>
-        </div>
-        <div className="form-row">
-          <div className="form-group">
-            <label>Training category</label>
-            <select value={form.category} onChange={e => set('category', e.target.value)}>
-              {TRAINING_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-            </select>
+          <div className="form-group" style={{ marginBottom: 12 }}>
+            <label style={{ display: 'block', fontSize: 12, color: 'var(--text-3)', marginBottom: 6 }}>Title *</label>
+            <input value={form.title} onChange={e => set('title', e.target.value)} placeholder="e.g. Product Demo Walkthrough" style={{ width: '100%', borderRadius: 8 }}/>
           </div>
-          <div className="form-group">
-            <label>Duration</label>
-            <input value={form.duration} onChange={e => set('duration', e.target.value)}
-              placeholder={recState === 'done' ? fmtTime(recTime) : 'e.g. 30 min'}/>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={{ display: 'block', fontSize: 12, color: 'var(--text-3)', marginBottom: 6 }}>Category</label>
+              <select value={form.category} onChange={e => set('category', e.target.value)} style={{ width: '100%', borderRadius: 8, height: 38 }}>
+                {TRAINING_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: 12, color: 'var(--text-3)', marginBottom: 6 }}>Duration</label>
+              <input value={form.duration} onChange={e => set('duration', e.target.value)} placeholder="e.g. 30 min" style={{ width: '100%', borderRadius: 8 }}/>
+            </div>
           </div>
-        </div>
-        <div className="form-group">
-          <label>Description</label>
-          <textarea value={form.description} onChange={e => set('description', e.target.value)}
-            placeholder="What will the employee learn from this module?"
-            style={{ minHeight: 60, resize: 'vertical' }}/>
+
+          <div className="form-group" style={{ marginBottom: 12 }}>
+            <label style={{ display: 'block', fontSize: 12, color: 'var(--text-3)', marginBottom: 6 }}>Description</label>
+            <textarea value={form.description} onChange={e => set('description', e.target.value)} placeholder="What will they learn?" style={{ width: '100%', borderRadius: 8, minHeight: 60 }}/>
+          </div>
         </div>
 
-        {uploading && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px',
-            background: 'rgba(99,102,241,.08)', borderRadius: 6, fontSize: 13, color: 'var(--brand)' }}>
-            <span className="spinner" style={{ width: 13, height: 13, borderWidth: 2 }}/> {progress}
-          </div>
-        )}
-        {error && (
-          <div style={{ background: 'rgba(239,68,68,.08)', color: 'var(--danger)', padding: '8px 12px', borderRadius: 6, fontSize: 13, marginTop: 8 }}>
-            {error}
-          </div>
-        )}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={uploading}>
+            {uploading ? 'Uploading…' : <><Upload size={14} style={{ marginRight: 5 }}/> Upload &amp; Save</>}
+          </button>
+        </div>
       </div>
-
-      <ModalFooter onClose={onClose}>
-        <button className="btn btn-primary" onClick={handleSave} disabled={uploading}>
-          {uploading ? 'Uploading…' : <><Upload size={14}/> Upload &amp; Save</>}
-        </button>
-      </ModalFooter>
-    </Modal>
-  )
-}
-
-// ─── MODAL SHELL HELPERS ──────────────────────────────────────
-
-function Modal({ title, onClose, children, width = 520 }) {
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-      onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ background: '#fff', borderRadius: 12, width: '100%', maxWidth: width,
-        boxShadow: '0 20px 60px rgba(0,0,0,.18)', display: 'flex', flexDirection: 'column', maxHeight: '90vh', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 16 }}>{title}</div>
-          <button className="btn btn-ghost btn-sm" onClick={onClose}><X size={16}/></button>
-        </div>
-        {children}
-      </div>
-    </div>
-  )
-}
-
-function ModalFooter({ onClose, children }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '1rem 1.5rem', borderTop: '1px solid var(--border)' }}>
-      <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-      {children}
     </div>
   )
 }
@@ -612,9 +530,34 @@ export default function Training() {
   const [playingMod, setPlayingMod]     = useState(null)
   const [updatingType, setUpdatingType] = useState(false)
 
+  // Filters State
+  const [activeTab, setActiveTab]       = useState('all') // 'all' | 'in_progress' | 'completed' | 'overdue'
+  const [searchTerm, setSearchTerm]     = useState('')
+
   useEffect(() => {
     Promise.all([fetchEmployees(), fetchTrainingModules()])
-      .then(([e, m]) => { setEmployees(e); setModules(m) })
+      .then(([e, m]) => {
+        setEmployees(e || [])
+        setModules(m || [])
+        
+        // Fetch progress for each employee
+        if (e && e.length > 0) {
+          Promise.all(e.map(emp => fetchTrainingProgress(emp.id)))
+            .then(allProgress => {
+              const initialCompleted = {}
+              e.forEach((emp, i) => {
+                const list = allProgress[i] || []
+                const doneMap = {}
+                list.forEach(p => {
+                  doneMap[p.module_id] = true
+                })
+                initialCompleted[emp.id] = doneMap
+              })
+              setCompleted(initialCompleted)
+            })
+            .catch(console.error)
+        }
+      })
       .catch(console.error)
       .finally(() => setLoading(false))
   }, [])
@@ -661,208 +604,498 @@ export default function Training() {
   const passed   = score !== null && score >= 3
 
   function markDone(modId) {
-    setCompleted(prev => ({ ...prev, [selectedEmp.id]: { ...(prev[selectedEmp.id] || {}), [modId]: true } }))
+    if (!selectedEmp) return
+    const record = {
+      employee_id: selectedEmp.id,
+      module_id: modId,
+      completed: true,
+      updated_at: new Date().toISOString()
+    }
+    
+    upsertTrainingProgress(record)
+      .then(() => {
+        setCompleted(prev => ({
+          ...prev,
+          [selectedEmp.id]: {
+            ...(prev[selectedEmp.id] || {}),
+            [modId]: true
+          }
+        }))
+      })
+      .catch(console.error)
+      
     setPlayingMod(null)
   }
 
-  if (loading) return <div className="card" style={{ padding: '2rem', color: 'var(--text-3)' }}>Loading training data…</div>
+  // Derive metrics
+  const totalTrainees = employees.length
+  
+  const completedTrainees = employees.filter(emp => {
+    const list = getModsForEmp(emp)
+    const doneMap = completedMods[emp.id] || {}
+    return list.length > 0 && list.every(m => doneMap[m.id])
+  }).length
+
+  const pendingTrainees = employees.filter(emp => {
+    const list = getModsForEmp(emp)
+    const doneMap = completedMods[emp.id] || {}
+    const completedCount = Object.keys(doneMap).length
+    return list.length > 0 && completedCount < list.length
+  }).length
+
+  // Average progress across all trainees
+  const totalProgressSum = employees.reduce((sum, emp) => {
+    const list = getModsForEmp(emp)
+    const doneMap = completedMods[emp.id] || {}
+    const pct = list.length ? Math.round(Object.keys(doneMap).length / list.length * 100) : 0
+    return sum + pct
+  }, 0)
+  const avgProgress = totalTrainees > 0 ? Math.round(totalProgressSum / totalTrainees) : 0
+
+  const stats = [
+    { label: 'Employees in training', value: totalTrainees, subtext: 'Total active trainees', color: '#4F46E5', bg: '#EEF2FF', icon: Users },
+    { label: 'Completed trainings', value: completedTrainees, subtext: 'This month', color: '#10B981', bg: '#ECFDF5', icon: CheckSquare },
+    { label: 'Pending trainings', value: pendingTrainees, subtext: 'This month', color: '#2563EB', bg: '#EFF6FF', icon: Clock },
+    { label: 'Average progress', value: `${avgProgress}%`, subtext: 'Across all trainees', color: '#7C3AED', bg: '#F5F3FF', icon: Award }
+  ]
+
+  // Filter trainees based on activeTab and searchTerm
+  const filteredEmployees = employees.filter(emp => {
+    const list = getModsForEmp(emp)
+    const doneMap = completedMods[emp.id] || {}
+    const pct = list.length ? Math.round(Object.keys(doneMap).length / list.length * 100) : 0
+    
+    // Search filter
+    const matchesSearch = emp.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      emp.job_title?.toLowerCase().includes(searchTerm.toLowerCase())
+
+    // Tab filter
+    if (activeTab === 'in_progress') return matchesSearch && pct > 0 && pct < 100
+    if (activeTab === 'completed') return matchesSearch && pct === 100
+    if (activeTab === 'overdue') return matchesSearch && emp.is_overdue // fallback path
+    return matchesSearch
+  })
 
   return (
-    <div>
+    <div style={{ fontFamily: 'var(--font-body)', color: 'var(--text-1)', paddingBottom: 40 }}>
       {showAddEmp     && <AddEmployeeModal onClose={() => setShowAddEmp(false)} onAdded={handleAdded}/>}
       {showAddContent && <AddContentModal  onClose={() => setShowAddContent(false)} onAdded={handleModuleAdded}/>}
 
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+      {/* Page Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 16 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Training</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-1)', marginBottom: 2 }}>Training</h1>
           <p style={{ color: 'var(--text-3)', fontSize: 13 }}>Onboarding and training management for new employees.</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-secondary" onClick={() => setShowAddContent(true)}>
-            <Plus size={15}/> Add Training Content
+        <div style={{ display: 'flex', gap: 12 }}>
+          <button className="btn btn-secondary" onClick={() => setShowAddContent(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 38 }}>
+            <Plus size={14}/> Add Training Content
           </button>
-          <button className="btn btn-primary" onClick={() => setShowAddEmp(true)}>
-            <UserPlus size={15}/> Add Employee
+          <button className="btn btn-primary" onClick={() => setShowAddEmp(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 38 }}>
+            <UserPlus size={14}/> Add Employee
           </button>
         </div>
       </div>
 
-      {employees.length === 0 ? (
-        <div className="card empty-state">
-          <div className="icon"><GraduationCap size={36}/></div>
-          <h3>No employees in training yet</h3>
-          <p>Transfer hired candidates from the Hiring tab or add employees directly.</p>
-          <button className="btn btn-primary" style={{ marginTop: '1rem' }} onClick={() => setShowAddEmp(true)}>
-            <UserPlus size={15}/> Add First Employee
+      {/* Metrics Row */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+        gap: 16,
+        marginBottom: 24
+      }}>
+        {stats.map((card, idx) => (
+          <div key={idx} className="card" style={{ padding: 20, borderRadius: 16, background: '#FFF', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: card.bg, color: card.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <card.icon size={18} />
+            </div>
+            <div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-1)', lineHeight: '1.2', fontFamily: 'var(--font-display)' }}>
+                {loading ? '—' : card.value}
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--text-3)', fontWeight: 500, marginTop: 2 }}>{card.label}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>{card.subtext}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Search and Tab Filters row */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+        marginBottom: 20,
+        flexWrap: 'wrap'
+      }}>
+        
+        {/* Left tabs inside select bar */}
+        <div style={{ display: 'flex', gap: 4, background: '#EFF1F5', padding: 4, borderRadius: 10, width: 'fit-content' }}>
+          {[
+            ['all', 'All Trainees'],
+            ['in_progress', 'In Progress'],
+            ['completed', 'Completed'],
+            ['overdue', 'Overdue']
+          ].map(([tab, label]) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              style={{
+                border: 'none',
+                outline: 'none',
+                padding: '6px 14px',
+                borderRadius: 8,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                background: activeTab === tab ? '#FFF' : 'transparent',
+                color: activeTab === tab ? '#4F46E5' : 'var(--text-3)',
+                boxShadow: activeTab === tab ? '0 2px 6px rgba(0,0,0,0.05)' : 'none'
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Right Search Input & Filters */}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flex: 1, justifyContent: 'flex-end', minWidth: 280 }}>
+          <div style={{ position: 'relative', width: '100%', maxWidth: 260 }}>
+            <Search size={15} color="var(--text-3)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
+            <input
+              type="text"
+              placeholder="Search employee, role, or course..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{
+                paddingLeft: 34,
+                height: 38,
+                fontSize: 13,
+                borderRadius: 8,
+                border: '1px solid var(--border)',
+                background: '#FFF',
+                outline: 'none',
+                width: '100%',
+                boxShadow: 'none'
+              }}
+            />
+          </div>
+          <button style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            height: 38,
+            padding: '0 14px',
+            borderRadius: 8,
+            background: '#FFF',
+            border: '1px solid var(--border)',
+            color: 'var(--text-2)',
+            fontWeight: 600,
+            fontSize: 13,
+            cursor: 'pointer'
+          }}>
+            <Filter size={14} /> Filters
           </button>
         </div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: 16 }}>
 
-          {/* ── Left: employee list ── */}
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.05em' }}>Employees</span>
-              <button className="btn btn-ghost btn-sm" onClick={() => setShowAddEmp(true)} style={{ padding: '3px 7px' }}><UserPlus size={13}/></button>
+      </div>
+
+      {/* Main Content Layout */}
+      {employees.length === 0 ? (
+        
+        // Empty State Card
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          
+          <div className="card" style={{
+            borderRadius: 16,
+            background: '#FFF',
+            border: '1px solid var(--border)',
+            padding: '48px 24px',
+            textAlign: 'center',
+            boxShadow: '0 4px 18px rgba(0,0,0,0.015)'
+          }}>
+            
+            {/* Graduation Cap SVG inside circle */}
+            <div style={{
+              display: 'inline-flex',
+              width: 72,
+              height: 72,
+              borderRadius: '50%',
+              background: '#EEF2FF',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 20
+            }}>
+              <GraduationCap size={36} color="#4F46E5" />
             </div>
-            {employees.map(emp => {
+
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-1)', marginBottom: 8 }}>
+              No employees in training yet
+            </h2>
+            <p style={{ color: 'var(--text-3)', fontSize: 13, lineHeight: 1.6, maxWidth: 420, margin: '0 auto 24px' }}>
+              Transfer hired candidates from the Hiring tab or add employees directly to get started.
+            </p>
+
+            <button
+              onClick={() => setShowAddEmp(true)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                height: 38,
+                padding: '0 16px',
+                borderRadius: 8,
+                background: '#4F46E5',
+                color: '#FFF',
+                border: 'none',
+                fontWeight: 600,
+                fontSize: 13,
+                cursor: 'pointer',
+                margin: '0 auto'
+              }}
+            >
+              <UserPlus size={14} /> Add First Employee
+            </button>
+          </div>
+
+          {/* Bottom Grid widgets */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: 20, alignItems: 'flex-start' }}>
+            
+            {/* Popular training topics (2x2 grid) */}
+            <div className="card" style={{ borderRadius: 16, border: '1px solid var(--border)', padding: 24 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>Popular training topics</h3>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#4F46E5', cursor: 'pointer' }}>View all</span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                {[
+                  { title: 'Onboarding Fundamentals', icon: User, bg: '#EEF2FF', color: '#4F46E5' },
+                  { title: 'Compliance & Policies', icon: Shield, bg: '#F3F4F6', color: 'var(--text-2)' },
+                  { title: 'Product Knowledge', icon: BookOpen, bg: '#EFF6FF', color: '#2563EB' },
+                  { title: 'Soft Skills', icon: Heart, bg: '#F5F3FF', color: '#7C3AED' }
+                ].map((item, i) => (
+                  <div key={i} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '12px 14px', border: '1px solid var(--border)', borderRadius: 12, background: '#FFF'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 28, height: 28, borderRadius: '50%', background: item.bg, color: item.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <item.icon size={13} />
+                      </div>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)' }}>{item.title}</span>
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)' }}>0</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Training insights */}
+            <div className="card" style={{ borderRadius: 16, border: '1px solid var(--border)', padding: 24 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>Training insights</h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#F8F9FC', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 8px', cursor: 'pointer' }}>
+                  <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-2)' }}>This month</span>
+                  <ChevronDown size={12} color="var(--text-3)" />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {[
+                  { label: 'Enrolled', value: '0', color: '#7C3AED', bg: '#F5F3FF', icon: Users },
+                  { label: 'Completed', value: '0', color: '#2563EB', bg: '#EFF6FF', icon: CheckCircle },
+                  { label: 'Avg. time spent', value: '0 hr', color: '#10B981', bg: '#ECFDF5', icon: Clock }
+                ].map((item, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                      <div style={{ width: 28, height: 28, borderRadius: '50%', background: item.bg, color: item.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <item.icon size={13} />
+                      </div>
+                      <span style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 500 }}>{item.label}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>{item.value}</span>
+                      <span style={{ fontSize: 10, color: '#10B981', fontWeight: 600 }}>▲ 0%</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--border)', marginTop: 14, paddingTop: 10, textAlign: 'center' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 600, color: '#4F46E5', cursor: 'pointer' }}>
+                  View detailed reports <ArrowRight size={12} />
+                </span>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+      ) : (
+        
+        // Split Trainee details view when employees exist
+        <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 20 }}>
+          
+          {/* Left panel: Trainee selection list */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {filteredEmployees.map(emp => {
               const mlist = getModsForEmp(emp)
               const pct   = mlist.length ? Math.round(Object.keys(completedMods[emp.id] || {}).length / mlist.length * 100) : 0
               const ttype = TRAINING_TYPES.find(t => t.value === (emp.training_type || 'general'))
+              const isSelected = selectedEmp?.id === emp.id
+
               return (
-                <div key={emp.id} onClick={() => selectEmp(emp)} className="card"
-                  style={{ padding: '0.9rem 1rem', marginBottom: 8, cursor: 'pointer',
-                    border: selectedEmp?.id === emp.id ? '1.5px solid var(--brand)' : '1px solid var(--border)' }}>
+                <div
+                  key={emp.id}
+                  onClick={() => selectEmp(emp)}
+                  style={{
+                    padding: '12px 14px',
+                    borderRadius: 12,
+                    background: '#FFF',
+                    border: isSelected ? '1.5px solid #4F46E5' : '1px solid var(--border)',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 18px rgba(0,0,0,0.01)',
+                    transition: 'all 0.2s'
+                  }}
+                >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div className="avatar">{emp.name?.split(' ').map(w => w[0]).join('').slice(0, 2)}</div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emp.name}</div>
-                      <div style={{ fontSize: 10, color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {ttype?.label || 'General'}
-                      </div>
+                    <div className="avatar" style={{ width: 34, height: 34, fontSize: 11, background: '#EEF2FF', color: '#4F46E5', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {emp.name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
                     </div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: pct === 100 ? 'var(--success)' : 'var(--brand)', flexShrink: 0 }}>{pct}%</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{emp.name}</div>
+                      <div style={{ fontSize: 10, color: 'var(--text-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>{ttype?.label || 'General'}</div>
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: pct === 100 ? '#10B981' : '#4F46E5' }}>{pct}%</span>
                   </div>
                 </div>
               )
             })}
           </div>
 
-          {/* ── Right: training content ── */}
-          {selectedEmp ? (
-            <div>
-              {/* Employee header card */}
-              <div className="card" style={{ marginBottom: 12, padding: '1.25rem' }}>
+          {/* Right panel: Active checklist / quiz detail block */}
+          {selectedEmp && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              
+              {/* Profile banner card */}
+              <div className="card" style={{ padding: 20, borderRadius: 16, border: '1px solid var(--border)', background: '#FFF' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
-                  <div className="avatar" style={{ width: 44, height: 44, fontSize: 15 }}>
-                    {selectedEmp.name?.split(' ').map(w => w[0]).join('').slice(0, 2)}
+                  <div className="avatar" style={{ width: 44, height: 44, fontSize: 14, background: '#EEF2FF', color: '#4F46E5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
+                    {selectedEmp.name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
                   </div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: 16 }}>{selectedEmp.name}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
-                      {selectedEmp.job_title} · {selectedEmp.emp_id}
-                      {selectedEmp.phone && <span> · {selectedEmp.phone}</span>}
+                    <h3 style={{ fontSize: 15, fontWeight: 700 }}>{selectedEmp.name}</h3>
+                    <p style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>{selectedEmp.job_title} · {selectedEmp.emp_id}</p>
+                    <p style={{ fontSize: 11, color: 'var(--text-3)' }}>{selectedEmp.email}</p>
+                  </div>
+                  
+                  {/* Category switcher */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Training Category:</span>
+                    <div style={{ position: 'relative', width: 180 }}>
+                      <select
+                        value={selectedEmp.training_type || 'general'}
+                        onChange={(e) => changeTrainingType(e.target.value)}
+                        style={{ height: 32, fontSize: 12, borderRadius: 8, paddingLeft: 8, paddingRight: 24, appearance: 'none', cursor: 'pointer' }}
+                        disabled={updatingType}
+                      >
+                        {TRAINING_TYPES.map(t => (
+                          <option key={t.value} value={t.value}>{t.label}</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={12} color="var(--text-3)" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
                     </div>
-                    {selectedEmp.email && <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{selectedEmp.email}</div>}
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 26, fontWeight: 800, color: progress === 100 ? 'var(--success)' : 'var(--brand)' }}>{progress}%</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-3)' }}>complete</div>
                   </div>
                 </div>
 
-                {/* Training type assignment */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'var(--surface-2)', borderRadius: 8, marginBottom: 10 }}>
-                  <BookOpen size={14} color="var(--brand)"/>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-2)', flexShrink: 0 }}>Training Track</span>
-                  <select
-                    value={selectedEmp.training_type || 'general'}
-                    onChange={e => changeTrainingType(e.target.value)}
-                    disabled={updatingType}
-                    style={{ flex: 1, padding: '5px 8px', fontSize: 13, border: '1px solid var(--border)', borderRadius: 6, background: '#fff', cursor: 'pointer' }}
-                  >
-                    {TRAINING_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                  </select>
-                  {updatingType && <span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }}/>}
-                </div>
-
-                <div className="score-bar-track">
-                  <div className="score-bar-fill" style={{ width: `${progress}%`, background: progress === 100 ? 'var(--success)' : 'var(--brand)' }}/>
+                {/* Progress bar */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 600, color: 'var(--text-2)', marginBottom: 6 }}>
+                    <span>Onboarding progress</span>
+                    <span style={{ color: progress === 100 ? '#10B981' : '#4F46E5' }}>{progress}%</span>
+                  </div>
+                  <div style={{ height: 6, background: '#F3F4F6', borderRadius: 99, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${progress}%`, background: progress === 100 ? '#10B981' : '#4F46E5', transition: 'width 0.4s' }} />
+                  </div>
                 </div>
               </div>
 
-              {/* Training modules */}
-              <div className="card" style={{ marginBottom: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                  <h2 style={{ fontSize: 15 }}>Training modules</h2>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setShowAddContent(true)}>
-                    <Plus size={13}/> Add content
-                  </button>
-                </div>
+              {/* Modules list & accordion panel */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <h4 style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', letterSpacing: '0.04em' }}>Training Modules</h4>
+                
+                {empMods.map((mod, index) => {
+                  const isDone = done[mod.id]
+                  const isExp = expanded === mod.id
+                  const isPlaying = playingMod?.id === mod.id
 
-                {empMods.length === 0 ? (
-                  <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-3)', border: '1px dashed var(--border)', borderRadius: 8 }}>
-                    <BookOpen size={24} style={{ marginBottom: 8, opacity: .4 }}/><br/>
-                    No modules for this training track yet.<br/>
-                    <button className="btn btn-secondary btn-sm" style={{ marginTop: 10 }} onClick={() => setShowAddContent(true)}>
-                      <Plus size={13}/> Upload training content
-                    </button>
-                  </div>
-                ) : empMods.map((m, i) => {
-                  const isDone  = done[m.id]
-                  const isExp   = expanded === m.id
-                  const isPlay  = playingMod === m.id
                   return (
-                    <div key={m.id} style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 8, overflow: 'hidden' }}>
-                      {/* Module header row */}
-                      <div onClick={() => setExpanded(isExp ? null : m.id)}
-                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px',
-                          background: isDone ? 'var(--success-bg)' : '#fff', cursor: 'pointer' }}>
-                        <div style={{ width: 26, height: 26, borderRadius: '50%',
-                          background: isDone ? 'var(--success)' : 'var(--surface-3)',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                          {isDone ? <CheckCircle size={14} color="#fff"/> : <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)' }}>{i + 1}</span>}
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 600 }}>{m.title}</div>
-                          <div style={{ fontSize: 11, color: 'var(--text-3)', display: 'flex', gap: 8, marginTop: 2, flexWrap: 'wrap' }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                              {m.type === 'video' ? <Video size={11}/> : <FileText size={11}/>} {m.type}
-                            </span>
-                            {m.duration && <span style={{ display: 'flex', alignItems: 'center', gap: 2 }}><Clock size={11}/>{m.duration}</span>}
-                            {m.is_mandatory && <span className="badge badge-danger" style={{ fontSize: 10 }}>Mandatory</span>}
+                    <div
+                      key={mod.id}
+                      className="card"
+                      style={{
+                        borderRadius: 12, border: '1px solid var(--border)', background: '#FFF', padding: 14,
+                        boxShadow: '0 4px 18px rgba(0,0,0,0.01)'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div onClick={() => setExpanded(isExp ? null : mod.id)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+                          <span style={{ width: 20, height: 20, borderRadius: '50%', background: isDone ? '#ECFDF5' : '#F3F4F6', color: isDone ? '#10B981' : 'var(--text-3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            {isDone ? <CheckCircle size={12} /> : <span>{index + 1}</span>}
+                          </span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>{mod.title}</span>
+                            <div style={{ display: 'flex', gap: 8, fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
+                              <span style={{ textTransform: 'uppercase' }}>{mod.type}</span>
+                              {mod.duration && <span>· {mod.duration}</span>}
+                            </div>
                           </div>
                         </div>
-                        <span className={`badge badge-${isDone ? 'success' : 'gray'}`}>{isDone ? 'Done' : 'Pending'}</span>
-                        {isExp ? <ChevronUp size={14} color="var(--text-3)"/> : <ChevronDown size={14} color="var(--text-3)"/>}
+
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          {!isDone && (
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => {
+                                if (mod.type === 'video') {
+                                  setPlayingMod(isPlaying ? null : mod)
+                                } else {
+                                  window.open(mod.content_url, '_blank')
+                                  markDone(mod.id)
+                                }
+                              }}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 28, fontSize: 11 }}
+                            >
+                              <Play size={10} /> {isPlaying ? 'Close' : 'Start'}
+                            </button>
+                          )}
+                          {isDone && <span style={{ fontSize: 11, fontWeight: 600, color: '#10B981', background: '#ECFDF5', padding: '2px 8px', borderRadius: 20 }}>Completed</span>}
+                          <button className="btn btn-ghost btn-sm" style={{ padding: 4 }} onClick={() => setExpanded(isExp ? null : mod.id)}>
+                            {isExp ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                          </button>
+                        </div>
                       </div>
 
-                      {/* Expanded content */}
-                      {isExp && (
-                        <div style={{ padding: '14px', background: 'var(--surface-2)', borderTop: '1px solid var(--border)' }}>
-                          {m.description && <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 12, lineHeight: 1.6 }}>{m.description}</p>}
-
-                          {/* VIDEO PLAYER */}
-                          {m.type === 'video' && m.content_url && isPlay && (
-                            <div style={{ marginBottom: 12 }}>
-                              <video
-                                src={m.content_url}
-                                controls
-                                style={{ width: '100%', borderRadius: 8, maxHeight: 320, background: '#000' }}
-                              />
-                            </div>
-                          )}
-
-                          {/* DOCUMENT VIEWER link */}
-                          {m.type === 'document' && m.content_url && (
-                            <div style={{ marginBottom: 12, padding: '10px 12px', background: '#fff', borderRadius: 6, border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <FileText size={16} color="var(--brand)"/>
-                              <a href={m.content_url} target="_blank" rel="noopener noreferrer"
-                                style={{ fontSize: 13, color: 'var(--brand)', fontWeight: 600, textDecoration: 'none' }}>
-                                Open document ↗
-                              </a>
-                            </div>
-                          )}
-
-                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                            {m.type === 'video' && m.content_url && (
-                              <button className="btn btn-secondary btn-sm" onClick={() => setPlayingMod(isPlay ? null : m.id)}>
-                                <Video size={13}/> {isPlay ? 'Hide Video' : 'Watch Video'}
-                              </button>
-                            )}
-                            {m.type === 'video' && !m.content_url && (
-                              <button className="btn btn-secondary btn-sm" disabled><Video size={13}/> No video uploaded</button>
-                            )}
-                            {m.type === 'document' && !m.content_url && (
-                              <button className="btn btn-secondary btn-sm" disabled><FileText size={13}/> No document uploaded</button>
-                            )}
-                            {!isDone && (
-                              <button className="btn btn-success btn-sm" onClick={() => markDone(m.id)}>
-                                <CheckCircle size={13}/> Mark complete
-                              </button>
-                            )}
+                      {/* Video Player Box */}
+                      {isPlaying && (
+                        <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+                          <video src={mod.content_url} controls autoPlay style={{ width: '100%', borderRadius: 8, background: '#000', maxHeight: 240 }} />
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+                            <button className="btn btn-primary btn-sm" onClick={() => markDone(mod.id)} style={{ height: 28, fontSize: 11 }}>
+                              <CheckCircle size={10} style={{ marginRight: 4 }} /> Mark as completed
+                            </button>
                           </div>
+                        </div>
+                      )}
+
+                      {/* Description expand block */}
+                      {isExp && !isPlaying && (
+                        <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--text-2)', lineHeight: 1.5 }}>
+                          {mod.description || 'No module description available.'}
                         </div>
                       )}
                     </div>
@@ -870,83 +1103,91 @@ export default function Training() {
                 })}
               </div>
 
-              {/* Quiz — shown when all modules done */}
+              {/* Quiz final evaluation block */}
               {allDone && (
-                <div className="card">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '1rem' }}>
-                    <GraduationCap size={18} color="var(--brand)"/>
-                    <h2 style={{ fontSize: 15, flex: 1 }}>Self-evaluation quiz</h2>
-                    {submitted && <span className={`badge badge-${passed ? 'success' : 'danger'}`}>{passed ? 'Passed' : 'Failed'}</span>}
-                  </div>
+                <div className="card" style={{ padding: 20, borderRadius: 16, border: '1.5px solid #4F46E5', background: 'rgba(79, 70, 229, 0.02)' }}>
+                  <h4 style={{ fontSize: 14, fontWeight: 700, color: '#4F46E5', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Award size={16} /> Final Quiz &amp; Evaluation
+                  </h4>
+                  
                   {!quizStarted && !submitted && (
-                    <div style={{ textAlign: 'center', padding: '1.5rem 0' }}>
-                      <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: '1rem' }}>All modules done! Take the quiz to confirm understanding.</p>
-                      <button className="btn btn-primary" onClick={() => setQuizStarted(true)}>Start quiz</button>
+                    <div>
+                      <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5, marginBottom: 12 }}>
+                        All training modules completed! Pass this 4-question quiz with at least 3 correct answers to verify competency.
+                      </p>
+                      <button className="btn btn-primary btn-sm" onClick={() => setQuizStarted(true)}>Start Quiz</button>
                     </div>
                   )}
+
                   {quizStarted && !submitted && (
-                    <div>
-                      {QUIZ.map((q, i) => (
-                        <div key={i} style={{ marginBottom: '1.25rem', padding: '1rem', background: 'var(--surface-2)', borderRadius: 8 }}>
-                          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>Q{i + 1}. {q.q}</div>
-                          {q.opts.map((o, j) => (
-                            <label key={j} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', cursor: 'pointer', fontSize: 13 }}>
-                              <input type="radio" name={`q${i}`} checked={answers[i] === j} onChange={() => setAnswers(a => ({ ...a, [i]: j }))}/> {o}
-                            </label>
-                          ))}
-                        </div>
-                      ))}
-                      <button className="btn btn-primary" onClick={() => setSubmitted(true)} disabled={Object.keys(answers).length < QUIZ.length}>Submit answers</button>
-                    </div>
-                  )}
-                  {submitted && (
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '1rem', background: passed ? 'var(--success-bg)' : 'var(--danger-bg)', borderRadius: 8, marginBottom: '1rem' }}>
-                        {passed ? <CheckCircle size={24} color="var(--success)"/> : <AlertCircle size={24} color="var(--danger)"/>}
-                        <div>
-                          <div style={{ fontWeight: 700, fontSize: 14 }}>{passed ? 'Training complete!' : 'More review needed'}</div>
-                          <div style={{ fontSize: 13, color: 'var(--text-2)' }}>Score: {score}/{QUIZ.length} ({Math.round(score / QUIZ.length * 100)}%)</div>
-                        </div>
-                      </div>
-                      {!passed && (
-                        <div>
-                          <label>Help ticket</label>
-                          <textarea value={ticket} onChange={e => setTicket(e.target.value)} placeholder="I need help with…" style={{ minHeight: 80, marginBottom: 8 }}/>
-                          {!ticketSent
-                            ? <button className="btn btn-secondary btn-sm" onClick={() => setTicketSent(true)} disabled={!ticket.trim()}><Send size={13}/> Submit help ticket</button>
-                            : <span className="badge badge-success">Ticket sent ✓</span>}
-                          <button className="btn btn-ghost btn-sm" style={{ marginLeft: 8 }} onClick={() => { setQuizStarted(false); setSubmitted(false); setAnswers({}) }}>↺ Retake</button>
-                        </div>
-                      )}
-                      {passed && !mgrApproved[selectedEmp.id] && (
-                        <div style={{ padding: '1rem', background: 'var(--warning-bg)', borderRadius: 8 }}>
-                          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Awaiting manager approval</div>
-                          <button className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => setMgrApproved(m => ({ ...m, [selectedEmp.id]: true }))}>
-                            [Manager] Approve training
-                          </button>
-                        </div>
-                      )}
-                      {passed && mgrApproved[selectedEmp.id] && (
-                        <div style={{ padding: '1rem', background: 'var(--success-bg)', borderRadius: 8, display: 'flex', gap: 10, alignItems: 'center' }}>
-                          <CheckCircle size={20} color="var(--success)"/>
-                          <div>
-                            <div style={{ fontWeight: 700 }}>Fully approved!</div>
-                            <div style={{ fontSize: 13, color: 'var(--text-2)' }}>{selectedEmp.name} is cleared for task assignment.</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                      {QUIZ.map((q, qidx) => (
+                        <div key={qidx} style={{ background: '#FFF', border: '1px solid var(--border)', padding: 12, borderRadius: 10 }}>
+                          <span style={{ fontSize: 12, fontWeight: 700 }}>Q{qidx + 1}. {q.q}</span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+                            {q.opts.map((opt, oidx) => (
+                              <label key={oidx} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+                                <input
+                                  type="radio"
+                                  name={`q-${qidx}`}
+                                  checked={answers[qidx] === oidx}
+                                  onChange={() => setAnswers(prev => ({ ...prev, [qidx]: oidx }))}
+                                  style={{ accentColor: '#4F46E5' }}
+                                />
+                                {opt}
+                              </label>
+                            ))}
                           </div>
                         </div>
+                      ))}
+
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={() => setSubmitted(true)}
+                          disabled={Object.keys(answers).length < QUIZ.length}
+                        >
+                          Submit Answers
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {submitted && (
+                    <div>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: passed ? '#10B981' : '#EF4444', marginBottom: 4 }}>
+                        {passed ? 'Passed! 🎉' : 'Failed ❌'} Score: {score} / {QUIZ.length}
+                      </p>
+                      <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5 }}>
+                        {passed
+                          ? 'Congratulations! The employee has passed the evaluation. Manager approval is now unlocked.'
+                          : 'Try reviewing the modules and retry the quiz.'}
+                      </p>
+                      
+                      {passed ? (
+                        <div style={{ marginTop: 12, borderTop: '1px solid rgba(79,70,229,0.15)', paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Manager Action:</span>
+                          <button
+                            className="btn btn-primary btn-sm"
+                            onClick={() => setMgrApproved(prev => ({ ...prev, [selectedEmp.id]: true }))}
+                            disabled={mgrApproved[selectedEmp.id]}
+                          >
+                            {mgrApproved[selectedEmp.id] ? 'Approved ✓' : 'Approve & Mark Ready'}
+                          </button>
+                        </div>
+                      ) : (
+                        <button className="btn btn-secondary btn-sm" style={{ marginTop: 10 }} onClick={() => { setQuizStarted(false); setSubmitted(false); setAnswers({}) }}>
+                          Retry Quiz
+                        </button>
                       )}
                     </div>
                   )}
                 </div>
               )}
-            </div>
-          ) : (
-            <div className="card empty-state">
-              <div className="icon">👈</div>
-              <h3>Select an employee</h3>
-              <p>Click an employee on the left to view their training progress.</p>
+
             </div>
           )}
+
         </div>
       )}
     </div>

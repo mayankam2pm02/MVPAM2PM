@@ -9,17 +9,24 @@ import JobDetail from './components/hiring/JobDetail.jsx'
 import Candidates from './pages/Candidates.jsx'
 import Interviews from './pages/Interviews.jsx'
 import Training from './pages/Training.jsx'
+import Onboarding from './pages/Onboarding.jsx'
+import Campaigns from './pages/Campaigns.jsx'
 import CRMTasks from './pages/CRMTasks.jsx'
 import Reports from './pages/Reports.jsx'
 import Settings from './pages/Settings.jsx'
+import AIPrompts from './pages/AIPrompts.jsx'
+import JobPortals from './pages/JobPortals.jsx'
 import ConsentPage from './pages/ConsentPage.jsx'
+import ApplyPage from './pages/ApplyPage.jsx'
+import OAuthLoginPage from './pages/OAuthLoginPage.jsx'
 import LoadingScreen from './components/layout/LoadingScreen.jsx'
+import { hasModulePermission } from './lib/permissions.js'
 
-function ProtectedRoute({ children, roles }) {
+function ProtectedRoute({ children, moduleKey }) {
   const { user, loading } = useAuth()
   if (loading) return <LoadingScreen />
   if (!user) return <Navigate to="/login" replace />
-  if (roles && !roles.includes(user.role)) return <Navigate to="/dashboard" replace />
+  if (moduleKey && !hasModulePermission(user.role, moduleKey)) return <Navigate to="/dashboard" replace />
   return <AppShell>{children}</AppShell>
 }
 
@@ -36,18 +43,24 @@ function AppRoutes() {
       {/* Public */}
       <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
       <Route path="/consent" element={<ConsentPage />} />
+      <Route path="/apply" element={<ApplyPage />} />
+      <Route path="/oauth-login" element={<OAuthLoginPage />} />
 
       {/* Protected */}
-      <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-      <Route path="/hiring"    element={<ProtectedRoute roles={['admin','hr','manager']}><HiringList /></ProtectedRoute>} />
-      <Route path="/hiring/new" element={<ProtectedRoute roles={['admin','hr']}><NewJob /></ProtectedRoute>} />
-      <Route path="/hiring/:id" element={<ProtectedRoute roles={['admin','hr','manager']}><JobDetail /></ProtectedRoute>} />
-      <Route path="/interviews" element={<ProtectedRoute><Interviews /></ProtectedRoute>} />
-      <Route path="/candidates" element={<ProtectedRoute><Candidates /></ProtectedRoute>} />
-      <Route path="/training"   element={<ProtectedRoute roles={['admin','hr','manager']}><Training /></ProtectedRoute>} />
-      <Route path="/crm"        element={<ProtectedRoute><CRMTasks /></ProtectedRoute>} />
-      <Route path="/reports"    element={<ProtectedRoute roles={['admin']}><Reports /></ProtectedRoute>} />
-      <Route path="/settings"   element={<ProtectedRoute roles={['admin']}><Settings /></ProtectedRoute>} />
+      <Route path="/dashboard" element={<ProtectedRoute moduleKey="dashboard"><Dashboard /></ProtectedRoute>} />
+      <Route path="/hiring"    element={<ProtectedRoute moduleKey="hiring"><HiringList /></ProtectedRoute>} />
+      <Route path="/hiring/new" element={<ProtectedRoute moduleKey="hiring"><NewJob /></ProtectedRoute>} />
+      <Route path="/hiring/:id" element={<ProtectedRoute moduleKey="hiring"><JobDetail /></ProtectedRoute>} />
+      <Route path="/interviews" element={<ProtectedRoute moduleKey="interviews"><Interviews /></ProtectedRoute>} />
+      <Route path="/candidates" element={<ProtectedRoute moduleKey="candidates"><Candidates /></ProtectedRoute>} />
+      <Route path="/onboarding" element={<ProtectedRoute moduleKey="onboarding"><Onboarding /></ProtectedRoute>} />
+      <Route path="/training"   element={<ProtectedRoute moduleKey="training"><Training /></ProtectedRoute>} />
+      <Route path="/crm"        element={<ProtectedRoute moduleKey="crm"><CRMTasks /></ProtectedRoute>} />
+      <Route path="/campaigns"  element={<ProtectedRoute moduleKey="campaigns"><Campaigns /></ProtectedRoute>} />
+      <Route path="/portals"    element={<ProtectedRoute moduleKey="portals"><JobPortals /></ProtectedRoute>} />
+      <Route path="/reports"    element={<ProtectedRoute moduleKey="reports"><Reports /></ProtectedRoute>} />
+      <Route path="/prompts"    element={<ProtectedRoute moduleKey="prompts"><AIPrompts /></ProtectedRoute>} />
+      <Route path="/settings"   element={<ProtectedRoute moduleKey="settings"><Settings /></ProtectedRoute>} />
 
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

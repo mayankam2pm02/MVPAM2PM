@@ -339,3 +339,40 @@ CREATE POLICY "authenticated_write_calls"       ON crm_call_logs    FOR ALL USIN
 CREATE POLICY "authenticated_write_tasks"       ON tasks            FOR ALL USING (auth.role() = 'authenticated');
 CREATE POLICY "authenticated_write_completions" ON task_completions FOR ALL USING (auth.role() = 'authenticated');
 CREATE POLICY "authenticated_write_emails"      ON email_logs       FOR ALL USING (auth.role() = 'authenticated');
+
+-- ─── ONBOARDING PROGRESS ──────────────────────────────────────
+CREATE TABLE IF NOT EXISTS onboarding_progress (
+  employee_id   UUID PRIMARY KEY REFERENCES employees(id) ON DELETE CASCADE,
+  docs_offer    BOOLEAN DEFAULT false,
+  docs_id       BOOLEAN DEFAULT false,
+  docs_bank     BOOLEAN DEFAULT false,
+  it_email      BOOLEAN DEFAULT false,
+  it_laptop     BOOLEAN DEFAULT false,
+  it_slack      BOOLEAN DEFAULT false,
+  hr_call       BOOLEAN DEFAULT false,
+  hr_benefits   BOOLEAN DEFAULT false,
+  updated_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE onboarding_progress ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "authenticated_read_onboarding" ON onboarding_progress FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "authenticated_write_onboarding" ON onboarding_progress FOR ALL USING (auth.role() = 'authenticated');
+
+-- ─── CONSENT AUDIT LOGS ───────────────────────────────────────
+CREATE TABLE IF NOT EXISTS consent_audit_logs (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  application_id  UUID REFERENCES applications(id) ON DELETE CASCADE,
+  candidate_email TEXT,
+  candidate_name  TEXT,
+  job_title       TEXT,
+  consent_status  TEXT,
+  ip_address      TEXT,
+  terms_version   TEXT,
+  created_at      TIMESTAMPTZ DEFAULT NOW(),
+  timestamp       TIMESTAMPTZ
+);
+
+ALTER TABLE consent_audit_logs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "authenticated_read_consent_logs" ON consent_audit_logs FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "authenticated_write_consent_logs" ON consent_audit_logs FOR ALL USING (auth.role() = 'authenticated');
+

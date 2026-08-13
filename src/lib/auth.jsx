@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react'
-import { supabase, signIn, signOut, getProfile } from './supabase.js'
+import { supabase, signIn, signOut, getProfile, isConfigured, signUp } from './supabase.js'
 
 const AuthContext = createContext(null)
 
@@ -11,28 +11,81 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        setUser(session.user)
-        loadProfile(session.user.id)
-      } else {
+    const fetchSession = async () => {
+      try {
+        let session = null
+        if (!isConfigured) {
+          const stored = localStorage.getItem('mock_user')
+          if (stored) {
+            const mockUser = JSON.parse(stored)
+            session = { user: { id: mockUser.id, email: mockUser.email } }
+          }
+        } else {
+          const res = await supabase.auth.getSession()
+          session = res?.data?.session
+        }
+
+        if (session?.user) {
+          setUser(session.user)
+          loadProfile(session.user.id)
+        } else {
+          setLoading(false)
+        }
+      } catch (err) {
+        console.warn('Failed to get initial session:', err)
         setLoading(false)
       }
-    })
+    }
+
+    fetchSession()
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        setUser(session.user)
-        loadProfile(session.user.id)
-      } else {
-        setUser(null)
-        setProfile(null)
-        setLoading(false)
+    let subscription
+    if (isConfigured) {
+      try {
+        const res = supabase.auth.onAuthStateChange((_event, session) => {
+          if (session?.user) {
+            setUser(session.user)
+            loadProfile(session.user.id)
+          } else {
+            setUser(null)
+            setProfile(null)
+            setLoading(false)
+          }
+        })
+        subscription = res?.data?.subscription
+      } catch (err) {
+        console.warn('Failed to subscribe to auth state changes:', err)
       }
-    })
+    } else {
+      const handleStorageChange = () => {
+        const stored = localStorage.getItem('mock_user')
+        if (stored) {
+          const mockUser = JSON.parse(stored)
+          setUser({ id: mockUser.id, email: mockUser.email })
+          setProfile(mockUser)
+          setLoading(false)
+        } else {
+          setUser(null)
+          setProfile(null)
+          setLoading(false)
+        }
+      }
+      window.addEventListener('storage', handleStorageChange)
+      window.addEventListener('mock-auth-change', handleStorageChange)
+      
+      // Trigger initial checks
+      handleStorageChange()
 
-    return () => subscription.unsubscribe()
+      return () => {
+        window.removeEventListener('storage', handleStorageChange)
+        window.removeEventListener('mock-auth-change', handleStorageChange)
+      }
+    }
+
+    return () => {
+      if (subscription) subscription.unsubscribe()
+    }
   }, [])
 
   async function loadProfile(userId) {
@@ -64,6 +117,16 @@ export function AuthProvider({ children }) {
     }
   }
 
+  async function register(email, password, name, role) {
+    setError('')
+    try {
+      await signUp(email, password, { name, role })
+    } catch (e) {
+      setError(e.message || 'Registration failed')
+      throw e
+    }
+  }
+
   // Combined user object for easy access
   const currentUser = profile ? {
     ...profile,
@@ -72,7 +135,7 @@ export function AuthProvider({ children }) {
   } : null
 
   return (
-    <AuthContext.Provider value={{ user: currentUser, loading, error, login, logout }}>
+    <AuthContext.Provider value={{ user: currentUser, loading, error, login, logout, register }}>
       {children}
     </AuthContext.Provider>
   )
