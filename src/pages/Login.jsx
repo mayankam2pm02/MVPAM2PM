@@ -546,29 +546,7 @@ export default function Login() {
             </div>
           </div>
 
-          {/* Quick Demo Accounts Pill Bar */}
-          {mode === 'login' && (
-            <div className="demo-login-box">
-              <p style={{ fontSize: 10, color: '#4b5563', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
-                🔑 Developer Demo Login
-              </p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                {DEMO_USERS.map(u => (
-                  <button
-                    key={u.email}
-                    type="button"
-                    className="demo-btn-pill"
-                    onClick={() => { 
-                      setEmail(u.email)
-                      setPassword(u.password) 
-                    }}
-                  >
-                    {u.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+
         </div>
 
         {/* Right Side: Emerald-green Card (Mockup style) */}
