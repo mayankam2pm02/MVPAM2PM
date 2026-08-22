@@ -295,7 +295,7 @@ export default function Candidates() {
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1)
-  const [rowsPerPage, setRowsPerPage] = useState(10)
+  const [rowsPerPage, setRowsPerPage] = useState(20)
 
   // Inline match state
   const [showMatchBar, setShowMatchBar] = useState(false)
@@ -733,15 +733,7 @@ export default function Candidates() {
                           }} />
                         </div>
 
-                        {/* Match Score Gauge or Rating */}
-                        {score != null ? (
-                          <MatchGauge score={score} />
-                        ) : (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 3, background: '#FEF3C7', padding: '3px 8px', borderRadius: 20 }}>
-                            <Star size={11} color="#D97706" fill="#D97706" />
-                            <span style={{ fontSize: 11, fontWeight: 800, color: '#D97706' }}>{c.rating || '4.5'}</span>
-                          </div>
-                        )}
+
                       </div>
 
                       {/* Candidate Name & Current Role */}
@@ -769,15 +761,35 @@ export default function Candidates() {
                             <span style={{ fontSize: 11, fontWeight: 600, color: '#4F46E5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{jobTitle}</span>
                           </div>
                         )}
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 11, color: 'var(--text-3)' }}>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
                           {c.location && (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                              <MapPin size={12} color="var(--text-3)" /> {c.location}
+                            <span style={{
+                              fontSize: 10,
+                              fontWeight: 600,
+                              color: '#3B82F6',
+                              background: '#EFF6FF',
+                              padding: '2px 8px',
+                              borderRadius: 4,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4
+                            }}>
+                              <MapPin size={11} color="#3B82F6" /> {c.location}
                             </span>
                           )}
                           {c.experience > 0 && (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                              <Clock size={12} color="var(--text-3)" /> {c.experience} yrs
+                            <span style={{
+                              fontSize: 10,
+                              fontWeight: 600,
+                              color: '#10B981',
+                              background: '#ECFDF5',
+                              padding: '2px 8px',
+                              borderRadius: 4,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4
+                            }}>
+                              <Clock size={11} color="#10B981" /> {c.experience} yrs
                             </span>
                           )}
                         </div>
@@ -900,9 +912,9 @@ export default function Candidates() {
                         appearance: 'none', cursor: 'pointer'
                       }}
                     >
-                      <option value="5">5</option>
-                      <option value="10">10</option>
                       <option value="20">20</option>
+                      <option value="50">50</option>
+                      <option value="100">100</option>
                     </select>
                     <ChevronDown size={12} color="var(--text-3)" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
                   </div>

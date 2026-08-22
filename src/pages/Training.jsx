@@ -20,7 +20,7 @@ const QUIZ = [
   { q: 'First step when you receive a new lead?',          opts: ['Call immediately', 'Qualify against ICP criteria', 'Send a generic email', 'Mark as won'], ans: 1 },
 ]
 
-const TRAINING_TYPES = [
+const INITIAL_TRAINING_TYPES = [
   { value: 'general',          label: 'General Onboarding',   tag: 'all' },
   { value: 'sales',            label: 'Sales & BD',           tag: 'sales' },
   { value: 'engineering',      label: 'Engineering & Dev',    tag: 'engineering' },
@@ -187,7 +187,7 @@ function fmtTime(s) {
   return `${m}:${sec}`
 }
 
-function AddContentModal({ onClose, onAdded }) {
+function AddContentModal({ employees, trainingTypes, setTrainingTypes, onClose, onAdded }) {
   const [form, setForm] = useState({
     title: '', type: 'video', category: 'general',
     description: '', duration: ''
@@ -196,6 +196,72 @@ function AddContentModal({ onClose, onAdded }) {
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress]   = useState('')
   const [error, setError]         = useState('')
+  const [selectedEmpIds, setSelectedEmpIds] = useState([])
+  const [isAllSelected, setIsAllSelected] = useState(true)
+  const [hoveredId, setHoveredId] = useState(null)
+  const [showNewCatInput, setShowNewCatInput] = useState(false)
+  const [newCatName, setNewCatName] = useState('')
+
+  function saveNewCategory() {
+    if (!newCatName.trim()) return
+    const label = newCatName.trim()
+    const value = label.toLowerCase().replace(/[^a-z0-9]/g, '_')
+    const tag = value
+    
+    if (trainingTypes.some(t => t.value === value)) {
+      setError('Category already exists.')
+      return
+    }
+
+    const newCat = { value, label, tag }
+    const updated = [...trainingTypes, newCat]
+    setTrainingTypes(updated)
+    set('category', value)
+    setShowNewCatInput(false)
+  }
+
+  // Filter employees belonging to the selected category
+  const categoryEmployees = (employees || []).filter(emp => {
+    const empType = emp.training_type || 'general'
+    return empType === form.category
+  })
+
+  function handleToggleAll() {
+    if (isAllSelected) {
+      setIsAllSelected(false)
+      setSelectedEmpIds([])
+    } else {
+      setIsAllSelected(true)
+      setSelectedEmpIds([])
+    }
+  }
+
+  function handleToggleEmp(empId) {
+    if (isAllSelected) {
+      // Transition from all selected to manual selection
+      setIsAllSelected(false)
+      // Select all except the clicked one
+      const others = categoryEmployees.filter(e => e.id !== empId).map(e => e.id)
+      setSelectedEmpIds(others)
+    } else {
+      setSelectedEmpIds(prev => {
+        const isChecked = prev.includes(empId)
+        let updated
+        if (isChecked) {
+          updated = prev.filter(id => id !== empId)
+        } else {
+          updated = [...prev, empId]
+        }
+        
+        // If all are now manually checked, make it "All Selected"
+        if (updated.length === categoryEmployees.length) {
+          setIsAllSelected(true)
+          return []
+        }
+        return updated
+      })
+    }
+  }
 
   const [videoTab, setVideoTab]       = useState('upload')
   const [recState, setRecState]       = useState('idle')
@@ -212,6 +278,11 @@ function AddContentModal({ onClose, onAdded }) {
   const mimeRef     = useRef('')
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  useEffect(() => {
+    setSelectedEmpIds([])
+    setIsAllSelected(true)
+  }, [form.category])
 
   function stopStream() {
     streamRef.current?.getTracks().forEach(t => t.stop())
@@ -336,14 +407,18 @@ function AddContentModal({ onClose, onAdded }) {
       const url  = await uploadTrainingFile(file, path)
 
       setProgress('Saving module…')
-      const tagMap = Object.fromEntries(TRAINING_TYPES.map(t => [t.value, t.tag]))
+      const tagMap = Object.fromEntries(trainingTypes.map(t => [t.value, t.tag]))
+      const tags = [tagMap[form.category] || 'all']
+      if (!isAllSelected && selectedEmpIds.length > 0) {
+        selectedEmpIds.forEach(id => tags.push(`emp:${id}`))
+      }
       const mod = await createTrainingModule({
         title:        form.title.trim(),
         type:         form.type,
         description:  form.description.trim() || null,
         duration:     form.duration.trim() || (recTime > 0 ? fmtTime(recTime) : null),
         content_url:  url,
-        profile_tags: [tagMap[form.category] || 'all'],
+        profile_tags: tags,
         order_index:  999,
         is_mandatory: false
       })
@@ -483,13 +558,139 @@ function AddContentModal({ onClose, onAdded }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
             <div>
               <label style={{ display: 'block', fontSize: 12, color: 'var(--text-3)', marginBottom: 6 }}>Category</label>
-              <select value={form.category} onChange={e => set('category', e.target.value)} style={{ width: '100%', borderRadius: 8, height: 38 }}>
-                {TRAINING_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
+              {showNewCatInput ? (
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    type="text"
+                    placeholder="New category name"
+                    value={newCatName}
+                    onChange={e => setNewCatName(e.target.value)}
+                    style={{ flex: 1, height: 38, borderRadius: 8, fontSize: 12 }}
+                  />
+                  <button 
+                    className="btn btn-primary btn-sm" 
+                    onClick={saveNewCategory}
+                    style={{ height: 38, padding: '0 10px', fontSize: 11 }}
+                  >
+                    Save
+                  </button>
+                  <button 
+                    className="btn btn-ghost btn-sm" 
+                    onClick={() => { setShowNewCatInput(false); set('category', trainingTypes[0].value) }}
+                    style={{ height: 38, padding: '0 8px', fontSize: 11 }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <select 
+                  value={form.category} 
+                  onChange={e => {
+                    if (e.target.value === '__add_new__') {
+                      setShowNewCatInput(true)
+                      setNewCatName('')
+                    } else {
+                      set('category', e.target.value)
+                    }
+                  }} 
+                  style={{ width: '100%', borderRadius: 8, height: 38 }}
+                >
+                  {trainingTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  <option value="__add_new__" style={{ color: '#4F46E5', fontWeight: 'bold' }}>+ Add Category</option>
+                </select>
+              )}
             </div>
             <div>
               <label style={{ display: 'block', fontSize: 12, color: 'var(--text-3)', marginBottom: 6 }}>Duration</label>
               <input value={form.duration} onChange={e => set('duration', e.target.value)} placeholder="e.g. 30 min" style={{ width: '100%', borderRadius: 8 }}/>
+            </div>
+          </div>
+
+          <div className="form-group" style={{ marginBottom: 12 }}>
+            <label style={{ display: 'block', fontSize: 12, color: 'var(--text-3)', marginBottom: 6 }}>
+              Assign to Specific Employees (Optional - defaults to all in category)
+            </label>
+            <div style={{
+              maxHeight: 140,
+              overflowY: 'auto',
+              border: '1px solid var(--border)',
+              borderRadius: 8,
+              padding: '8px 12px',
+              background: '#FFF',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4
+            }}>
+              {/* All Employees row */}
+              <label style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                fontSize: 12,
+                cursor: 'pointer',
+                margin: 0,
+                padding: '6px 8px',
+                borderRadius: 6,
+                textAlign: 'left',
+                justifyContent: 'flex-start',
+                width: '100%',
+                transition: 'background 0.2s',
+                background: hoveredId === 'all' ? '#F3F4F6' : 'transparent',
+                borderBottom: '1px solid var(--border)',
+                paddingBottom: 8,
+                marginBottom: 4
+              }}
+              onMouseEnter={() => setHoveredId('all')}
+              onMouseLeave={() => setHoveredId(null)}
+              >
+                <input
+                  type="checkbox"
+                  checked={isAllSelected}
+                  onChange={handleToggleAll}
+                  style={{ accentColor: '#4F46E5', margin: 0, width: 14, height: 14, flexShrink: 0, cursor: 'pointer' }}
+                />
+                <span style={{ fontWeight: 700, color: '#4F46E5' }}>All Employees</span>
+                <span style={{ color: 'var(--text-3)', fontSize: 10, marginLeft: 4 }}>(Assign to everyone in {form.category} category)</span>
+              </label>
+
+              {categoryEmployees.length > 0 ? (
+                categoryEmployees.map(emp => {
+                  const isChecked = isAllSelected || selectedEmpIds.includes(emp.id)
+                  return (
+                    <label key={emp.id} style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      fontSize: 12,
+                      cursor: 'pointer',
+                      margin: 0,
+                      padding: '6px 8px',
+                      borderRadius: 6,
+                      textAlign: 'left',
+                      justifyContent: 'flex-start',
+                      width: '100%',
+                      transition: 'background 0.2s',
+                      background: hoveredId === emp.id ? '#F3F4F6' : 'transparent',
+                    }}
+                    onMouseEnter={() => setHoveredId(emp.id)}
+                    onMouseLeave={() => setHoveredId(null)}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => handleToggleEmp(emp.id)}
+                        style={{ accentColor: '#4F46E5', margin: 0, width: 14, height: 14, flexShrink: 0, cursor: 'pointer' }}
+                      />
+                      <span style={{ fontWeight: 600, color: 'var(--text-1)' }}>{emp.name}</span>
+                      <span style={{ color: 'var(--text-3)', fontSize: 10, marginLeft: 4 }}>({emp.job_title})</span>
+                    </label>
+                  )
+                })
+              ) : (
+                <div style={{ fontSize: 12, color: 'var(--text-3)', fontStyle: 'italic', padding: '6px 8px' }}>
+                  No active employees found in the selected category.
+                </div>
+              )}
             </div>
           </div>
 
@@ -531,8 +732,21 @@ export default function Training() {
   const [updatingType, setUpdatingType] = useState(false)
 
   // Filters State
-  const [activeTab, setActiveTab]       = useState('all') // 'all' | 'in_progress' | 'completed' | 'overdue'
+  const [activeTab, setActiveTab]       = useState('all') // 'all' | 'in_progress' | 'completed' | 'overdue' | 'training_contents'
+  const [activeContentCategory, setActiveContentCategory] = useState('all')
   const [searchTerm, setSearchTerm]     = useState('')
+
+  const [trainingTypes, setTrainingTypes] = useState(() => {
+    const stored = localStorage.getItem('training_types')
+    if (stored) {
+      try { return JSON.parse(stored) } catch(e) {}
+    }
+    return INITIAL_TRAINING_TYPES
+  })
+
+  useEffect(() => {
+    localStorage.setItem('training_types', JSON.stringify(trainingTypes))
+  }, [trainingTypes])
 
   useEffect(() => {
     Promise.all([fetchEmployees(), fetchTrainingModules()])
@@ -587,10 +801,16 @@ export default function Training() {
   function getModsForEmp(emp) {
     if (!emp) return []
     const ttype = emp.training_type || 'general'
-    const typeObj = TRAINING_TYPES.find(t => t.value === ttype)
+    const typeObj = trainingTypes.find(t => t.value === ttype)
     const tag = typeObj?.tag || 'all'
     return modules.filter(m => {
       if (!m.profile_tags || m.profile_tags.length === 0) return true
+      
+      const hasSpecificAssignments = m.profile_tags.some(t => t.startsWith('emp:'))
+      if (hasSpecificAssignments) {
+        return m.profile_tags.includes(`emp:${emp.id}`)
+      }
+
       if (m.profile_tags.includes('all')) return true
       return m.profile_tags.includes(tag)
     })
@@ -676,10 +896,35 @@ export default function Training() {
     return matchesSearch
   })
 
+  // Filter modules based on activeContentCategory and searchTerm
+  const filteredModules = modules.filter(mod => {
+    // Search filter
+    const matchesSearch = !searchTerm || 
+      mod.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      mod.description?.toLowerCase().includes(searchTerm.toLowerCase())
+
+    if (!matchesSearch) return false
+
+    // Category filter
+    if (activeContentCategory === 'all') return true
+    
+    const catObj = trainingTypes.find(t => t.value === activeContentCategory)
+    const tag = catObj?.tag || 'all'
+    return mod.profile_tags?.includes(tag)
+  })
+
   return (
     <div style={{ fontFamily: 'var(--font-body)', color: 'var(--text-1)', paddingBottom: 40 }}>
       {showAddEmp     && <AddEmployeeModal onClose={() => setShowAddEmp(false)} onAdded={handleAdded}/>}
-      {showAddContent && <AddContentModal  onClose={() => setShowAddContent(false)} onAdded={handleModuleAdded}/>}
+      {showAddContent && (
+        <AddContentModal 
+          employees={employees} 
+          trainingTypes={trainingTypes}
+          setTrainingTypes={setTrainingTypes}
+          onClose={() => setShowAddContent(false)} 
+          onAdded={handleModuleAdded}
+        />
+      )}
 
       {/* Page Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 16 }}>
@@ -736,7 +981,8 @@ export default function Training() {
             ['all', 'All Trainees'],
             ['in_progress', 'In Progress'],
             ['completed', 'Completed'],
-            ['overdue', 'Overdue']
+            ['overdue', 'Overdue'],
+            ['training_contents', 'Training Contents']
           ].map(([tab, label]) => (
             <button
               key={tab}
@@ -803,7 +1049,221 @@ export default function Training() {
       </div>
 
       {/* Main Content Layout */}
-      {employees.length === 0 ? (
+      {activeTab === 'training_contents' ? (
+        <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 20 }}>
+          {/* Left panel: Category selection list */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {[
+              { value: 'all', label: 'All Categories', tag: 'all' },
+              ...trainingTypes
+            ].map(cat => {
+              const count = cat.value === 'all' 
+                ? modules.length 
+                : modules.filter(m => m.profile_tags?.includes(cat.tag)).length
+              const isSelected = activeContentCategory === cat.value
+
+              return (
+                <div
+                  key={cat.value}
+                  onClick={() => setActiveContentCategory(cat.value)}
+                  style={{
+                    padding: '12px 14px',
+                    borderRadius: 12,
+                    background: '#FFF',
+                    border: isSelected ? '1.5px solid #4F46E5' : '1px solid var(--border)',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 18px rgba(0,0,0,0.01)',
+                    transition: 'all 0.2s',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}
+                >
+                  <span style={{ fontSize: 13, fontWeight: isSelected ? 700 : 500, color: isSelected ? '#4F46E5' : 'var(--text-2)' }}>
+                    {cat.label}
+                  </span>
+                  <span style={{ 
+                    fontSize: 11, 
+                    fontWeight: 600, 
+                    color: isSelected ? '#FFF' : 'var(--text-3)',
+                    background: isSelected ? '#4F46E5' : '#F3F4F6',
+                    padding: '2px 8px',
+                    borderRadius: 20
+                  }}>
+                    {count}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Right panel: list of training contents */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', letterSpacing: '0.04em' }}>
+                Training Contents ({filteredModules.length})
+              </h3>
+            </div>
+            
+            {filteredModules.length === 0 ? (
+              <div className="card" style={{
+                borderRadius: 16,
+                background: '#FFF',
+                border: '1px solid var(--border)',
+                padding: '48px 24px',
+                textAlign: 'center',
+                boxShadow: '0 4px 18px rgba(0,0,0,0.015)'
+              }}>
+                <div style={{
+                  display: 'inline-flex',
+                  width: 56,
+                  height: 56,
+                  borderRadius: '50%',
+                  background: '#F3F4F6',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: 16
+                }}>
+                  <BookOpen size={24} color="var(--text-3)" />
+                </div>
+                <h4 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', marginBottom: 4 }}>
+                  No training content found
+                </h4>
+                <p style={{ color: 'var(--text-3)', fontSize: 12, maxWidth: 300, margin: '0 auto' }}>
+                  There are no modules uploaded under this category matching your search.
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {filteredModules.map((mod, index) => {
+                  const isPlaying = playingMod?.id === mod.id
+                  const isVideo = mod.type === 'video'
+                  
+                  // Find category label
+                  const catObj = trainingTypes.find(t => t.tag === (mod.profile_tags?.[0] || 'all'))
+                  const categoryLabel = catObj?.label || 'General Onboarding'
+
+                  return (
+                    <div
+                      key={mod.id}
+                      className="card"
+                      style={{
+                        borderRadius: 12,
+                        border: '1px solid var(--border)',
+                        background: '#FFF',
+                        padding: 16,
+                        boxShadow: '0 4px 18px rgba(0,0,0,0.01)'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+                        <div style={{ display: 'flex', gap: 12, flex: 1, minWidth: 0 }}>
+                          <div style={{ 
+                            width: 36, 
+                            height: 36, 
+                            borderRadius: 8, 
+                            background: isVideo ? '#EEF2FF' : '#ECFDF5', 
+                            color: isVideo ? '#4F46E5' : '#10B981', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center',
+                            flexShrink: 0
+                          }}>
+                            {isVideo ? <Video size={16} /> : <FileText size={16} />}
+                          </div>
+                          
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+                              <h4 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>{mod.title}</h4>
+                              <span style={{
+                                fontSize: 10,
+                                fontWeight: 600,
+                                padding: '2px 8px',
+                                borderRadius: 12,
+                                background: '#F3F4F6',
+                                color: 'var(--text-2)'
+                              }}>
+                                {categoryLabel}
+                              </span>
+                              {mod.is_mandatory && (
+                                <span style={{
+                                  fontSize: 10,
+                                  fontWeight: 600,
+                                  padding: '2px 8px',
+                                  borderRadius: 12,
+                                  background: '#FEF2F2',
+                                  color: '#EF4444'
+                                }}>
+                                  Mandatory
+                                </span>
+                              )}
+                              {mod.profile_tags?.some(t => t.startsWith('emp:')) && (
+                                <span style={{
+                                  fontSize: 10,
+                                  fontWeight: 600,
+                                  padding: '2px 8px',
+                                  borderRadius: 12,
+                                  background: '#EFF6FF',
+                                  color: '#2563EB'
+                                }}>
+                                  Assigned: {
+                                    mod.profile_tags
+                                      .filter(t => t.startsWith('emp:'))
+                                      .map(t => t.replace('emp:', ''))
+                                      .map(id => employees.find(e => e.id === id)?.name || 'Unknown')
+                                      .join(', ')
+                                  }
+                                </span>
+                              )}
+                            </div>
+                            
+                            <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5, margin: '0 0 8px 0' }}>
+                              {mod.description || 'No description provided.'}
+                            </p>
+                            
+                            <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--text-3)' }}>
+                              {mod.duration && <span>Duration: {mod.duration}</span>}
+                              <span>Added on: {new Date(mod.created_at).toLocaleDateString()}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          {isVideo ? (
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => setPlayingMod(isPlaying ? null : mod)}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 28, fontSize: 11 }}
+                            >
+                              <Play size={10} /> {isPlaying ? 'Close' : 'Play Video'}
+                            </button>
+                          ) : (
+                            <a
+                              href={mod.content_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="btn btn-secondary btn-sm"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 28, fontSize: 11, textDecoration: 'none' }}
+                            >
+                              <FileText size={10} /> View Document
+                            </a>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Video Player Box */}
+                      {isPlaying && isVideo && (
+                        <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+                          <video src={mod.content_url} controls autoPlay style={{ width: '100%', borderRadius: 8, background: '#000', maxHeight: 320 }} />
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : employees.length === 0 ? (
         
         // Empty State Card
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -945,7 +1405,7 @@ export default function Training() {
             {filteredEmployees.map(emp => {
               const mlist = getModsForEmp(emp)
               const pct   = mlist.length ? Math.round(Object.keys(completedMods[emp.id] || {}).length / mlist.length * 100) : 0
-              const ttype = TRAINING_TYPES.find(t => t.value === (emp.training_type || 'general'))
+              const ttype = trainingTypes.find(t => t.value === (emp.training_type || 'general'))
               const isSelected = selectedEmp?.id === emp.id
 
               return (
@@ -1003,7 +1463,7 @@ export default function Training() {
                         style={{ height: 32, fontSize: 12, borderRadius: 8, paddingLeft: 8, paddingRight: 24, appearance: 'none', cursor: 'pointer' }}
                         disabled={updatingType}
                       >
-                        {TRAINING_TYPES.map(t => (
+                        {trainingTypes.map(t => (
                           <option key={t.value} value={t.value}>{t.label}</option>
                         ))}
                       </select>

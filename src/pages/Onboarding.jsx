@@ -92,8 +92,8 @@ export default function Onboarding() {
   const doneMods = trainingCompleted[selectedEmp?.id] || {}
   const trainingCount = empMods.length ? empMods.filter(m => doneMods[m.id]).length : 0
 
-  const totalPossible = ONBOARDING_TASKS.length + (empMods.length ? 1 : 0)
-  const totalCompleted = checklistCount + (empMods.length && trainingCount === empMods.length ? 1 : 0)
+  const totalPossible = ONBOARDING_TASKS.length
+  const totalCompleted = checklistCount
   const currentProgress = totalPossible ? Math.round((totalCompleted / totalPossible) * 100) : 0
 
   // Checklist handler
@@ -122,9 +122,6 @@ export default function Onboarding() {
     }
 
     const pending = ONBOARDING_TASKS.filter(t => !empTasksStatus[t.key]).map(t => t.label)
-    if (empMods.length && trainingCount < empMods.length) {
-      pending.push('Pending training courses')
-    }
 
     if (pending.length === 0) {
       alert('All onboarding steps are completed!')
@@ -344,7 +341,7 @@ HR Team`
               </div>
 
               {/* Tasks List */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div>
                 {/* Milestone Checklist */}
                 <div className="card" style={{ padding: 20, borderRadius: 16, border: '1px solid var(--border)', background: '#FFF' }}>
                   <h4 style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', letterSpacing: '0.04em', margin: '0 0 16px' }}>Milestone Checklist</h4>
@@ -367,34 +364,6 @@ HR Team`
                       )
                     })}
                   </div>
-                </div>
-
-                {/* Training Progress widget */}
-                <div className="card" style={{ padding: 20, borderRadius: 16, border: '1px solid var(--border)', background: '#FFF' }}>
-                  <h4 style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', letterSpacing: '0.04em', margin: '0 0 16px' }}>Training Courses</h4>
-                  {empMods.length === 0 ? (
-                    <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-3)', fontSize: 12 }}>No training modules assigned to this department.</div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      {empMods.map(mod => {
-                        const isDone = !!doneMods[mod.id]
-                        return (
-                          <div key={mod.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 10 }}>
-                            <div>
-                              <div style={{ fontSize: 12, fontWeight: 600 }}>{mod.title}</div>
-                              <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>{mod.type === 'video' ? 'Video' : 'Document'} · {mod.duration || '5 mins'}</div>
-                            </div>
-                            <span style={{
-                              display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 99, fontSize: 10, fontWeight: 600,
-                              background: isDone ? '#ECFDF5' : '#F3F4F6', color: isDone ? '#065F46' : 'var(--text-3)'
-                            }}>
-                              {isDone ? <><Check size={10} /> Done</> : 'Pending'}
-                            </span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
