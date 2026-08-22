@@ -101,8 +101,20 @@ Mr. Manager Team`
       if (sendWA && date && time) {
         const ivrNum  = ivrPhone.replace(/[^0-9]/g, '')
         const iveeNum = iveePhone.replace(/[^0-9]/g, '')
-        if (ivrNum)  window.open(`https://wa.me/${ivrNum}?text=${encodeURIComponent(buildWAMessage('interviewer'))}`, '_blank')
-        if (iveeNum) window.open(`https://wa.me/${iveeNum}?text=${encodeURIComponent(buildWAMessage('candidate'))}`, '_blank')
+        if (ivrNum) {
+          window.open(`https://wa.me/${ivrNum}?text=${encodeURIComponent(buildWAMessage('interviewer'))}`, '_blank')
+        }
+        if (iveeNum) {
+          if (ivrNum) {
+            setTimeout(() => {
+              if (confirm('Interviewer notification tab opened. Click OK to open the Candidate notification tab.')) {
+                window.open(`https://wa.me/${iveeNum}?text=${encodeURIComponent(buildWAMessage('candidate'))}`, '_blank')
+              }
+            }, 500)
+          } else {
+            window.open(`https://wa.me/${iveeNum}?text=${encodeURIComponent(buildWAMessage('candidate'))}`, '_blank')
+          }
+        }
         if (!ivrNum && !iveeNum) alert('No phone numbers provided — WhatsApp notifications skipped.')
       }
 
