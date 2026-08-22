@@ -9,7 +9,16 @@ const DEMO_USERS = [
   { label: 'Manager',     email: 'anita@acme.com',  password: 'mgr12345' },
   { label: 'Interviewer', email: 'karan@acme.com',  password: 'int12345' },
 ]
-
+const INITIAL_ROLES = [
+  { value: 'interviewer',        label: 'Interviewer',        authRole: 'interviewer' },
+  { value: 'hr_manager',         label: 'HR Manager',         authRole: 'hr' },
+  { value: 'general_manager',    label: 'General Manager',    authRole: 'manager' },
+  { value: 'onboarding_employee',label: 'Onboarding Employee',authRole: 'employee' },
+  { value: 'sales_rep',          label: 'Sales Representative',authRole: 'employee' },
+  { value: 'software_engineer',  label: 'Software Engineer',  authRole: 'employee' },
+  { value: 'product_manager',    label: 'Product Manager',    authRole: 'employee' },
+  { value: 'operations_lead',    label: 'Operations Lead',    authRole: 'employee' }
+]
 const TESTIMONIALS = [
   {
     text: "Search and find your dream job is now easier than ever. Just browse a job and apply if you need to.",
@@ -38,6 +47,38 @@ export default function Login() {
   const [name,      setName]      = useState('')
   const [role,      setRole]      = useState('interviewer')
 
+  const [workspaceRoles, setWorkspaceRoles] = useState(() => {
+    const stored = localStorage.getItem('workspace_roles')
+    if (stored) {
+      try { return JSON.parse(stored) } catch(e) {}
+    }
+    return INITIAL_ROLES
+  })
+
+  const [showNewRoleInput, setShowNewRoleInput] = useState(false)
+  const [newRoleName, setNewRoleName] = useState('')
+
+  useEffect(() => {
+    localStorage.setItem('workspace_roles', JSON.stringify(workspaceRoles))
+  }, [workspaceRoles])
+
+  function saveNewRole() {
+    if (!newRoleName.trim()) return
+    const label = newRoleName.trim()
+    const value = label.toLowerCase().replace(/[^a-z0-9]/g, '_')
+    
+    if (workspaceRoles.some(r => r.value === value)) {
+      setError('Role already exists.')
+      return
+    }
+
+    const newRole = { value, label, authRole: 'employee' }
+    const updated = [...workspaceRoles, newRole]
+    setWorkspaceRoles(updated)
+    setRole(value)
+    setShowNewRoleInput(false)
+  }
+
   const [showPass,  setShowPass]  = useState(false)
   const [loading,   setLoading]   = useState(false)
   const [success,   setSuccess]   = useState('')
@@ -61,7 +102,8 @@ export default function Login() {
       if (mode === 'login') {
         await login(email, password)
       } else {
-        await register(email, password, name, role)
+        const roleObj = workspaceRoles.find(r => r.value === role) || { authRole: 'employee', label: 'Employee' }
+        await register(email, password, name, roleObj.authRole, roleObj.label)
         setSuccess('Account created successfully! Logging you in...')
         setTimeout(() => {
           login(email, password)
@@ -462,17 +504,68 @@ export default function Login() {
               {mode === 'register' && (
                 <div style={{ marginBottom: '1.5rem' }}>
                   <label className="input-label-tag">Workspace Role</label>
-                  <select
-                    className="habu-input"
-                    value={role}
-                    onChange={e => setRole(e.target.value)}
-                    style={{ background: '#ffffff', color: '#0f172a' }}
-                  >
-                    <option value="interviewer">Interviewer</option>
-                    <option value="hr">HR Manager</option>
-                    <option value="manager">General Manager</option>
-                    <option value="employee">Onboarding Employee</option>
-                  </select>
+                  {showNewRoleInput ? (
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <input
+                        type="text"
+                        placeholder="Enter custom role..."
+                        value={newRoleName}
+                        onChange={e => setNewRoleName(e.target.value)}
+                        className="habu-input"
+                        style={{ flex: 1, height: 38, background: '#ffffff', color: '#0f172a' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={saveNewRole}
+                        style={{
+                          background: '#3cb27f',
+                          border: 'none',
+                          color: '#fff',
+                          borderRadius: 8,
+                          padding: '0 12px',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setShowNewRoleInput(false); setRole(workspaceRoles[0].value) }}
+                        style={{
+                          background: 'rgba(255,255,255,0.1)',
+                          border: 'none',
+                          color: '#fff',
+                          borderRadius: 8,
+                          padding: '0 12px',
+                          fontSize: 12,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <select
+                      className="habu-input"
+                      value={role}
+                      onChange={e => {
+                        if (e.target.value === '__add_new__') {
+                          setShowNewRoleInput(true)
+                          setNewRoleName('')
+                        } else {
+                          setRole(e.target.value)
+                        }
+                      }}
+                      style={{ background: '#ffffff', color: '#0f172a' }}
+                    >
+                      {workspaceRoles.map(r => (
+                        <option key={r.value} value={r.value}>{r.label}</option>
+                      ))}
+                      <option value="__add_new__" style={{ color: '#3cb27f', fontWeight: 'bold' }}>+ Add Custom Role</option>
+                    </select>
+                  )}
                 </div>
               )}
 

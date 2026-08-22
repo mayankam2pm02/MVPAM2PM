@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react'
-import { supabase, signIn, signOut, getProfile, isConfigured, signUp } from './supabase.js'
+import { supabase, signIn, signOut, getProfile, isConfigured, signUp, updateProfile } from './supabase.js'
 
 const AuthContext = createContext(null)
 
@@ -117,10 +117,18 @@ export function AuthProvider({ children }) {
     }
   }
 
-  async function register(email, password, name, role) {
+  async function register(email, password, name, role, title) {
     setError('')
     try {
-      await signUp(email, password, { name, role })
+      const data = await signUp(email, password, { name, role, title })
+      const uId = data?.user?.id
+      if (uId) {
+        try {
+          await updateProfile(uId, { title })
+        } catch (e) {
+          console.warn('Failed to set profile title during signup:', e)
+        }
+      }
     } catch (e) {
       setError(e.message || 'Registration failed')
       throw e

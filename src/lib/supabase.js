@@ -195,11 +195,13 @@ export async function signUp(email, password, metadata) {
   if (!isConfigured) {
     const role = metadata?.role || 'interviewer'
     const name = metadata?.name || email.split('@')[0]
+    const title = metadata?.title || role
     const mockUser = {
       id: 'mock-uuid-' + Date.now(),
       email: email,
       role: role,
       name: name,
+      title: title,
       avatar: null
     }
     localStorage.setItem('mock_user', JSON.stringify(mockUser))
@@ -215,7 +217,8 @@ export async function signUp(email, password, metadata) {
     options: {
       data: {
         name: metadata?.name,
-        role: metadata?.role || 'interviewer'
+        role: metadata?.role || 'interviewer',
+        title: metadata?.title || metadata?.role || 'interviewer'
       }
     }
   })
@@ -248,6 +251,27 @@ export async function getProfile(userId) {
     .from('profiles')
     .select('*')
     .eq('id', userId)
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function updateProfile(userId, updates) {
+  if (!isConfigured) {
+    const mockUser = getMockUser()
+    if (mockUser && mockUser.id === userId) {
+      const updated = { ...mockUser, ...updates }
+      localStorage.setItem('mock_user', JSON.stringify(updated))
+      window.dispatchEvent(new Event('mock-auth-change'))
+      return updated
+    }
+    return mockUser
+  }
+  const { data, error } = await supabase
+    .from('profiles')
+    .update(updates)
+    .eq('id', userId)
+    .select()
     .single()
   if (error) throw error
   return data
