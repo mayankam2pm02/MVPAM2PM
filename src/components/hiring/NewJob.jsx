@@ -20,7 +20,12 @@ export default function NewJob() {
   const [error, setError] = useState('')
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
-  const depts = ['Sales', 'Engineering', 'Marketing', 'HR', 'Operations', 'Finance', 'Customer Success']
+  const [customDepts, setCustomDepts] = useState(() => {
+    const saved = localStorage.getItem('company_departments')
+    return saved ? JSON.parse(saved) : ['Sales', 'Engineering', 'Marketing', 'HR', 'Operations', 'Finance', 'Customer Success']
+  })
+  const [showAddCustomDept, setShowAddCustomDept] = useState(false)
+  const [newDeptInput, setNewDeptInput] = useState('')
 
   function addQuestion() {
     setQuestions(prev => [...prev, { question: '', dealbreaker: false }])
@@ -116,10 +121,66 @@ export default function NewJob() {
           <div className="form-row">
             <div className="form-group">
               <label>Department *</label>
-              <select value={form.department} onChange={e => set('department', e.target.value)}>
-                <option value="">Select…</option>
-                {depts.map(d => <option key={d}>{d}</option>)}
-              </select>
+              {showAddCustomDept ? (
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    value={newDeptInput}
+                    onChange={e => setNewDeptInput(e.target.value)}
+                    placeholder="New department name"
+                    style={{ flex: 1, height: 38, borderRadius: 8, border: '1px solid var(--border)', padding: '0 10px', fontSize: 13 }}
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={() => {
+                      const trimmed = newDeptInput.trim()
+                      if (!trimmed) {
+                        setShowAddCustomDept(false)
+                        return
+                      }
+                      if (!customDepts.includes(trimmed)) {
+                        const updated = [...customDepts, trimmed]
+                        setCustomDepts(updated)
+                        localStorage.setItem('company_departments', JSON.stringify(updated))
+                      }
+                      set('department', trimmed)
+                      setShowAddCustomDept(false)
+                      setNewDeptInput('')
+                    }}
+                    style={{ height: 38, padding: '0 12px', borderRadius: 8 }}
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      setShowAddCustomDept(false)
+                      setNewDeptInput('')
+                    }}
+                    style={{ height: 38, padding: '0 12px', borderRadius: 8, background: '#F3F4F6', border: '1px solid var(--border)', color: 'var(--text-2)' }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <select
+                  value={form.department}
+                  onChange={e => {
+                    if (e.target.value === '+ Add Custom Department') {
+                      setShowAddCustomDept(true)
+                    } else {
+                      set('department', e.target.value)
+                    }
+                  }}
+                  style={{ width: '100%', borderRadius: 8 }}
+                >
+                  <option value="">Select…</option>
+                  {customDepts.map(d => <option key={d} value={d}>{d}</option>)}
+                  <option value="+ Add Custom Department" style={{ fontWeight: 600, color: '#4F46E5' }}>+ Add Custom Department</option>
+                </select>
+              )}
             </div>
             <div className="form-group">
               <label>Type</label>

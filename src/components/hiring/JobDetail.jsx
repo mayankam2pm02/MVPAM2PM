@@ -46,6 +46,13 @@ export default function JobDetail() {
   const [error, setError]             = useState('')
   const [openDropdown, setOpenDropdown] = useState(null)
 
+  const [customDepts, setCustomDepts] = useState(() => {
+    const saved = localStorage.getItem('company_departments')
+    return saved ? JSON.parse(saved) : ['Sales', 'Engineering', 'Marketing', 'HR', 'Operations', 'Finance', 'Customer Success']
+  })
+  const [showAddCustomDept, setShowAddCustomDept] = useState(false)
+  const [newDeptInput, setNewDeptInput] = useState('')
+
   // Pipeline filters
   const [fName,    setFName]    = useState('')
   const [fStatus,  setFStatus]  = useState('all')
@@ -483,7 +490,7 @@ The ${company} Hiring Team`
     }
   }
 
-  const depts = ['Sales','Engineering','Marketing','HR','Operations','Finance','Customer Success']
+  // Dynamic depts loaded from customDepts state
   const setEF  = (k, v) => setEditForm(f => ({ ...f, [k]: v }))
 
   const recColor = { shortlist: 'success', maybe: 'warning', reject: 'danger' }
@@ -1223,10 +1230,66 @@ The ${company} Hiring Team`
                   </div>
                   <div>
                     <label style={{ fontSize: 12, color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Department *</label>
-                    <select value={editForm.department} onChange={e => setEF('department', e.target.value)} style={{ width: '100%', boxSizing: 'border-box' }}>
-                      <option value="">Select…</option>
-                      {depts.map(d => <option key={d}>{d}</option>)}
-                    </select>
+                    {showAddCustomDept ? (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <input
+                          value={newDeptInput}
+                          onChange={e => setNewDeptInput(e.target.value)}
+                          placeholder="New department name"
+                          style={{ flex: 1, height: 38, borderRadius: 6, border: '1px solid var(--border)', padding: '0 10px', fontSize: 13, boxSizing: 'border-box' }}
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          onClick={() => {
+                            const trimmed = newDeptInput.trim()
+                            if (!trimmed) {
+                              setShowAddCustomDept(false)
+                              return
+                            }
+                            if (!customDepts.includes(trimmed)) {
+                              const updated = [...customDepts, trimmed]
+                              setCustomDepts(updated)
+                              localStorage.setItem('company_departments', JSON.stringify(updated))
+                            }
+                            setEF('department', trimmed)
+                            setShowAddCustomDept(false)
+                            setNewDeptInput('')
+                          }}
+                          style={{ height: 38, padding: '0 12px', borderRadius: 6 }}
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => {
+                            setShowAddCustomDept(false)
+                            setNewDeptInput('')
+                          }}
+                          style={{ height: 38, padding: '0 12px', borderRadius: 6, background: '#F3F4F6', border: '1px solid var(--border)', color: 'var(--text-2)' }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <select
+                        value={editForm.department}
+                        onChange={e => {
+                          if (e.target.value === '+ Add Custom Department') {
+                            setShowAddCustomDept(true)
+                          } else {
+                            setEF('department', e.target.value)
+                          }
+                        }}
+                        style={{ width: '100%', boxSizing: 'border-box' }}
+                      >
+                        <option value="">Select…</option>
+                        {customDepts.map(d => <option key={d} value={d}>{d}</option>)}
+                        <option value="+ Add Custom Department" style={{ fontWeight: 600, color: '#4F46E5' }}>+ Add Custom Department</option>
+                      </select>
+                    )}
                   </div>
                   <div>
                     <label style={{ fontSize: 12, color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Employment Type</label>
