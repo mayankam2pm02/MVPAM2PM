@@ -53,6 +53,13 @@ function ScheduleModal({ app, onClose, onScheduled }) {
   // WhatsApp notification checkbox
   const [sendWA, setSendWA] = useState(false)
 
+  const [scheduledSuccess, setScheduledSuccess] = useState(false)
+  const [scheduledIvrNum, setScheduledIvrNum] = useState('')
+  const [scheduledIveeNum, setScheduledIveeNum] = useState('')
+
+  const [ivrSent, setIvrSent] = useState(false)
+  const [iveeSent, setIveeSent] = useState(false)
+
   const dateDisplay = date ? new Date(date).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : ''
   const timeDisplay = time ? (() => { const [h, m] = time.split(':'); const hr = +h; return `${hr % 12 || 12}:${m} ${hr >= 12 ? 'PM' : 'AM'}` })() : ''
 
@@ -97,28 +104,15 @@ Mr. Manager Team`
       })
       onScheduled({ ...app, ...updated })
 
-      // Open WhatsApp tabs after saving if checkbox was checked
-      if (sendWA && date && time) {
+      if (sendWA) {
         const ivrNum  = ivrPhone.replace(/[^0-9]/g, '')
         const iveeNum = iveePhone.replace(/[^0-9]/g, '')
-        if (ivrNum) {
-          window.open(`https://wa.me/${ivrNum}?text=${encodeURIComponent(buildWAMessage('interviewer'))}`, '_blank')
-        }
-        if (iveeNum) {
-          if (ivrNum) {
-            setTimeout(() => {
-              if (confirm('Interviewer notification tab opened. Click OK to open the Candidate notification tab.')) {
-                window.open(`https://wa.me/${iveeNum}?text=${encodeURIComponent(buildWAMessage('candidate'))}`, '_blank')
-              }
-            }, 500)
-          } else {
-            window.open(`https://wa.me/${iveeNum}?text=${encodeURIComponent(buildWAMessage('candidate'))}`, '_blank')
-          }
-        }
-        if (!ivrNum && !iveeNum) alert('No phone numbers provided — WhatsApp notifications skipped.')
+        setScheduledIvrNum(ivrNum)
+        setScheduledIveeNum(iveeNum)
+        setScheduledSuccess(true)
+      } else {
+        onClose()
       }
-
-      onClose()
     } catch (e) {
       setError(e.message)
     } finally {
@@ -133,6 +127,92 @@ Mr. Manager Team`
   }
 
   const sectionLabel = { fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 5 }
+
+  if (scheduledSuccess) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16, backdropFilter: 'blur(2px)' }}>
+        <div style={{ background: '#ffffff', borderRadius: 16, padding: '32px 24px', width: '100%', maxWidth: 480, boxShadow: '0 24px 64px rgba(0,0,0,0.2)', textAlign: 'center' }}>
+          
+          <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#ECFDF5', color: '#10B981', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+            <CheckCircle size={32} />
+          </div>
+
+          <h3 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 8px', color: 'var(--text-1)' }}>Interview Scheduled!</h3>
+          <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 24px', lineHeight: 1.5 }}>
+            The interview details are saved. Click below to open and send the WhatsApp notifications for both parties.
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
+            {scheduledIvrNum && (
+              <button
+                className="btn"
+                onClick={() => {
+                  window.open(`https://wa.me/${scheduledIvrNum}?text=${encodeURIComponent(buildWAMessage('interviewer'))}`, '_blank')
+                  setIvrSent(true)
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  background: ivrSent ? '#A7F3D0' : '#25D366',
+                  color: ivrSent ? '#065F46' : '#FFF',
+                  border: 'none',
+                  height: 42,
+                  borderRadius: 10,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  width: '100%',
+                  opacity: ivrSent ? 0.6 : 1,
+                  transition: 'all 0.2s'
+                }}
+              >
+                <MessageCircle size={16} /> {ivrSent ? 'Interviewer Invite Sent ✓' : 'Send Interviewer Invite'}
+              </button>
+            )}
+            {scheduledIveeNum && (
+              <button
+                className="btn"
+                onClick={() => {
+                  window.open(`https://wa.me/${scheduledIveeNum}?text=${encodeURIComponent(buildWAMessage('candidate'))}`, '_blank')
+                  setIveeSent(true)
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  background: iveeSent ? '#A7F3D0' : '#25D366',
+                  color: iveeSent ? '#065F46' : '#FFF',
+                  border: 'none',
+                  height: 42,
+                  borderRadius: 10,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  width: '100%',
+                  opacity: iveeSent ? 0.6 : 1,
+                  transition: 'all 0.2s'
+                }}
+              >
+                <MessageCircle size={16} /> {iveeSent ? 'Candidate Invite Sent ✓' : 'Send Candidate Invite'}
+              </button>
+            )}
+          </div>
+
+          <button
+            className="btn btn-primary"
+            onClick={onClose}
+            style={{ width: '100%', height: 40, borderRadius: 10 }}
+          >
+            Done
+          </button>
+
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16, backdropFilter: 'blur(2px)' }}>
