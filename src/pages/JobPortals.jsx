@@ -672,22 +672,17 @@ export default function JobPortals() {
                     Disconnect
                   </button>
                 ) : (
-                  <>
-                    <button
-                      className="btn btn-primary"
-                      onClick={() => handleOAuthConnect(platform)}
-                      style={{ flex: 1, height: 34, borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
-                    >
-                      OAuth Login
-                    </button>
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => setConnectingChannel(platform)}
-                      style={{ flex: 1, height: 34, borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: '#F8F9FC', border: '1px solid var(--border)', color: 'var(--text-2)' }}
-                    >
-                      API Key
-                    </button>
-                  </>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => {
+                      setConnectingChannel(platform)
+                      setUsername('')
+                      setApiKey('')
+                    }}
+                    style={{ flex: 1, height: 34, borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    Connect Platform
+                  </button>
                 )}
               </div>
             </div>
@@ -703,18 +698,18 @@ export default function JobPortals() {
               Connect {connectingChannel.name}
             </h3>
             <p style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 20 }}>
-              Enter your credentials to link your corporate job posting account securely.
+              Enter your portal account credentials to link this platform securely.
             </p>
 
             <form onSubmit={handleConnectChannel} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-2)', display: 'block', marginBottom: 4 }}>
-                  Account Username / Email
+                  Portal Email / Username
                 </label>
                 <input
-                  type="email"
+                  type="text"
                   required
-                  placeholder="hr@company.com"
+                  placeholder="e.g. hr@company.com or username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   style={{ width: '100%', height: 38, padding: '0 10px', borderRadius: 6, border: '1px solid var(--border)', outline: 'none', background: '#FFF', fontSize: 13 }}
@@ -723,12 +718,12 @@ export default function JobPortals() {
 
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-2)', display: 'block', marginBottom: 4 }}>
-                  Client API Key / Access Token
+                  Portal Password
                 </label>
                 <input
                   type="password"
                   required
-                  placeholder="••••••••••••••••"
+                  placeholder="Enter your account password"
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
                   style={{ width: '100%', height: 38, padding: '0 10px', borderRadius: 6, border: '1px solid var(--border)', outline: 'none', background: '#FFF', fontSize: 13 }}
@@ -748,7 +743,7 @@ export default function JobPortals() {
                   className="btn btn-primary"
                   style={{ flex: 1, height: 36, borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
                 >
-                  Verify &amp; Link
+                  Link Account
                 </button>
               </div>
             </form>

@@ -560,10 +560,13 @@ export async function fetchEmployees() {
   }
   const { data, error } = await supabase
     .from('employees')
-    .select('*')
+    .select('*, candidates(phone)')
     .order('created_at', { ascending: false })
   if (error) throw error
-  return data
+  return (data || []).map(emp => ({
+    ...emp,
+    phone: emp.phone || emp.candidates?.phone || ''
+  }))
 }
 
 export async function createEmployee(employee) {

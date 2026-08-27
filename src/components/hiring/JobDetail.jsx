@@ -308,6 +308,7 @@ The ${company} Hiring Team`
         application_id:  app.id,
         name:            candName,
         email:           candEmail,
+        phone:           app.candidates?.phone || null,
         job_title:       job.title,
         department:      job.department,
         location:        job.location,
