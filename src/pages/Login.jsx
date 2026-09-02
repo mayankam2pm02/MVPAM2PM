@@ -19,21 +19,24 @@ const INITIAL_ROLES = [
   { value: 'product_manager',    label: 'Product Manager',    authRole: 'employee' },
   { value: 'operations_lead',    label: 'Operations Lead',    authRole: 'employee' }
 ]
-const TESTIMONIALS = [
+const BRAND_SLIDES = [
   {
-    text: "Search and find your dream job is now easier than ever. Just browse a job and apply if you need to.",
-    author: "Mas Parjono",
-    role: "UI Designer at Google"
+    heading: "The day your business stops depending on you... growth begins.",
+    tagline: "YOUR AI POWERED MANAGER THAT YOU DO NOT HAVE TO HIRE TRAIN AND MONITOR",
+    highlight: "Autonomous Coordination",
+    subtext: "Hiring · Operations · Follow-ups · Delegation"
   },
   {
-    text: "Closing Rs 2Cr+ in ARR last year was possible because Cosphere streamlined our pipeline. Simple, fast, and secure.",
-    author: "Sneha Iyer",
-    role: "Sales Lead at Acme"
+    heading: "Scale your execution without increasing management overhead.",
+    tagline: "FROM CANDIDATE SCREENING TO DAILY TEAM REPORTING ON AUTOPILOT",
+    highlight: "Full Operations Suite",
+    subtext: "Smart pipeline & instant daily tracking"
   },
   {
-    text: "Managing a workforce of 300+ people is simple and stress-free. The automated training and compliance screens work like magic.",
-    author: "Priya Sharma",
-    role: "CEO / Admin at Acme"
+    heading: "Run your company with speed, clarity, and zero bottlenecks.",
+    tagline: "ALWAYS-ON MANAGER DELIVERING RESULTS FROM MORNING TO NIGHT",
+    highlight: "Executive Control",
+    subtext: "Coordination handled · Vision unlocked"
   }
 ]
 
@@ -87,11 +90,11 @@ export default function Login() {
   const [currentTestimonial, setCurrentTestimonial] = useState(0)
 
   const handlePrevTestimonial = () => {
-    setCurrentTestimonial(prev => (prev === 0 ? TESTIMONIALS.length - 1 : prev - 1))
+    setCurrentTestimonial(prev => (prev === 0 ? BRAND_SLIDES.length - 1 : prev - 1))
   }
 
   const handleNextTestimonial = () => {
-    setCurrentTestimonial(prev => (prev === TESTIMONIALS.length - 1 ? 0 : prev + 1))
+    setCurrentTestimonial(prev => (prev === BRAND_SLIDES.length - 1 ? 0 : prev + 1))
   }
 
   async function handleSubmit(e) {
@@ -160,11 +163,12 @@ export default function Login() {
           justify-content: space-between;
         }
         .brand-name {
-          font-size: 18px;
-          font-weight: 700;
+          font-size: 20px;
+          font-weight: 800;
           color: #ffffff;
           margin-bottom: 2.5rem;
           font-family: "Outfit", sans-serif;
+          letter-spacing: -0.02em;
         }
         .welcome-heading {
           font-size: 20px;
@@ -284,38 +288,41 @@ export default function Login() {
           overflow: hidden;
         }
         .testimonial-top {
-          margin-top: 1.5rem;
+          margin-top: 1rem;
         }
         .testimonial-heading {
-          font-size: 32px;
+          font-size: 23px;
           font-weight: 800;
           color: #ffffff;
-          line-height: 1.15;
-          margin-bottom: 0.5rem;
+          line-height: 1.25;
+          margin-bottom: 0.75rem;
           letter-spacing: -0.02em;
         }
         .quote-symbol {
-          font-size: 40px;
+          font-size: 38px;
           color: #ffffff;
           font-family: Georgia, serif;
           line-height: 0.1;
-          margin-bottom: 1rem;
+          margin-bottom: 0.85rem;
           font-weight: 900;
         }
         .testimonial-text {
-          font-size: 15px;
-          color: rgba(255, 255, 255, 0.9);
-          line-height: 1.6;
-          margin-bottom: 1.5rem;
+          font-size: 14.5px;
+          font-weight: 800;
+          color: #ffffff;
+          letter-spacing: 0.03em;
+          text-transform: uppercase;
+          line-height: 1.5;
+          margin-bottom: 1.25rem;
         }
         .testimonial-author-name {
-          font-size: 14.5px;
+          font-size: 14px;
           font-weight: 700;
           color: #ffffff;
         }
         .testimonial-author-role {
           font-size: 12px;
-          color: rgba(255, 255, 255, 0.7);
+          color: rgba(255, 255, 255, 0.8);
         }
         .navigation-arrow-row {
           display: flex;
@@ -370,18 +377,17 @@ export default function Login() {
           box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
         }
         .promo-title {
-          font-size: 17px;
+          font-size: 13.5px;
           font-weight: 800;
           color: #0f172a;
-          line-height: 1.25;
-          margin-bottom: 8px;
-          max-width: 250px;
+          line-height: 1.35;
+          margin-bottom: 6px;
+          padding-right: 28px;
         }
         .promo-desc {
           font-size: 11.5px;
-          color: #64748b;
+          color: #475569;
           line-height: 1.5;
-          max-width: 260px;
         }
         .avatar-pile {
           display: flex;
@@ -425,7 +431,7 @@ export default function Login() {
         {/* Left Side: Dark-themed Sign In Pane */}
         <div className="left-auth-pane">
           <div>
-            <div className="brand-name">Cosphere</div>
+            <div className="brand-name">AM2PM's Mr.Manager</div>
             
             {/* Warning Banner if Supabase not configured */}
             {!isConfigured && (
@@ -646,30 +652,31 @@ export default function Login() {
         <div className="right-testimonials-pane">
           {/* Quote Block */}
           <div className="testimonial-top">
-            <h3 className="testimonial-heading">What’s our</h3>
-            <h3 className="testimonial-heading" style={{ marginBottom: '1rem' }}>Jobseekers Said.</h3>
+            <h3 className="testimonial-heading">
+              {BRAND_SLIDES[currentTestimonial].heading}
+            </h3>
             
             <div className="quote-symbol">“</div>
             
             <p className="testimonial-text">
-              "{TESTIMONIALS[currentTestimonial].text}"
+              {BRAND_SLIDES[currentTestimonial].tagline}
             </p>
             
             <div>
               <div className="testimonial-author-name">
-                {TESTIMONIALS[currentTestimonial].author}
+                {BRAND_SLIDES[currentTestimonial].highlight}
               </div>
               <div className="testimonial-author-role">
-                {TESTIMONIALS[currentTestimonial].role}
+                {BRAND_SLIDES[currentTestimonial].subtext}
               </div>
             </div>
 
             {/* Nav Arrows */}
             <div className="navigation-arrow-row">
-              <button className="nav-arrow-btn-left" onClick={handlePrevTestimonial}>
+              <button className="nav-arrow-btn-left" onClick={handlePrevTestimonial} aria-label="Previous">
                 <ArrowLeft size={16} />
               </button>
-              <button className="nav-arrow-btn-right" onClick={handleNextTestimonial}>
+              <button className="nav-arrow-btn-right" onClick={handleNextTestimonial} aria-label="Next">
                 <ArrowRight size={16} />
               </button>
             </div>
@@ -682,9 +689,12 @@ export default function Login() {
               <Star size={16} fill="#ffffff" stroke="#ffffff" />
             </div>
 
-            <h4 className="promo-title">Get your right job and right place apply now</h4>
+            <h4 className="promo-title">
+              Get the feeling of having an HR Manager, Operations Manager and Team Leader... without hiring all three.
+            </h4>
             <p className="promo-desc">
-              Be among the first founders to experience the easiest way to start run a business.
+              Mr. Manager takes care of the coordination.<br />
+              <span style={{ fontWeight: 600, color: '#0f172a' }}>You take care of the vision.</span>
             </p>
 
             {/* Avatars pile */}

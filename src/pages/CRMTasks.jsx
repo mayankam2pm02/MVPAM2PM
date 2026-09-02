@@ -6,7 +6,7 @@ import { sendConsentEmail } from '../lib/resend.js'
 import {
   Phone, CheckSquare, Clock, Plus, Bell, MessageSquare, Target, Calendar, Upload, X, CheckCircle,
   FileText, UserPlus, ChevronDown, ChevronUp, Loader, Users, Mail, MessageCircle, Save, StickyNote,
-  MoreVertical, ArrowRight, PhoneCall, Check, Filter, Sparkles
+  MoreVertical, ArrowRight, PhoneCall, Check, Filter, Sparkles, SlidersHorizontal, Pencil, Trash2, RefreshCw
 } from 'lucide-react'
 
 // ─── Shared CSV parser ─────────────────────────────────────────
@@ -457,14 +457,214 @@ function UploadCRMModal({ onClose, onSaved }) {
   )
 }
 
-// ─── Main Page ────────────────────────────────────────────────
-const DISP_OPTIONS = [
-  { v: 'interested',     l: 'Interested',      t: 'success' },
-  { v: 'callback',       l: 'Callback',        t: 'warning' },
-  { v: 'not_interested', l: 'Not interested',  t: 'danger'  },
-  { v: 'new',            l: 'New / not called', t: 'gray'   },
-  { v: 'converted',      l: 'Converted',       t: 'brand'   },
+// ─── Dispositions ──────────────────────────────────────────────
+const DEFAULT_DISP_OPTIONS = [
+  { v: 'called',                    l: 'Called',                     t: 'gray'    },
+  { v: 'interested',                l: 'Interested',                 t: 'success' },
+  { v: 'not_picked',                l: 'Not picked',                 t: 'warning' },
+  { v: 'incorrect_number',          l: 'Incorrect number',           t: 'danger'  },
+  { v: 'whatsapp_shared',           l: 'WhatsApp shared',            t: 'success' },
+  { v: 'proposal_shared',           l: 'Proposal shared',            t: 'purple'  },
+  { v: 'meeting_aligned',           l: 'Meeting aligned',            t: 'brand'   },
+  { v: 'closed',                    l: 'Closed',                     t: 'success' },
+  { v: 'lost_lead',                 l: 'Lost lead',                  t: 'danger'  },
+  { v: 'to_be_contacted_in_future', l: 'To be contacted in future',  t: 'warning' },
 ]
+
+// ─── Manage Dispositions Modal ─────────────────────────────────
+function ManageDispositionsModal({ options, onClose, onSave }) {
+  const [list, setList] = useState(() => [...options])
+  const [newLabel, setNewLabel] = useState('')
+  const [newTag, setNewTag] = useState('brand')
+  const [editingIdx, setEditingIdx] = useState(null)
+  const [editLabel, setEditLabel] = useState('')
+  const [editTag, setEditTag] = useState('brand')
+
+  const COLOR_TAGS = [
+    { value: 'brand',   label: 'Indigo (Brand)' },
+    { value: 'success', label: 'Green (Success)' },
+    { value: 'warning', label: 'Orange (Warning)' },
+    { value: 'danger',  label: 'Red (Danger)' },
+    { value: 'purple',  label: 'Purple' },
+    { value: 'info',    label: 'Blue (Info)' },
+    { value: 'gray',    label: 'Slate / Gray' },
+  ]
+
+  function handleAdd() {
+    const trimmed = newLabel.trim()
+    if (!trimmed) return
+    const v = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+    if (list.some(item => item.v === v || item.l.toLowerCase() === trimmed.toLowerCase())) {
+      alert('A disposition with this name already exists.')
+      return
+    }
+    const updated = [...list, { v, l: trimmed, t: newTag }]
+    setList(updated)
+    onSave(updated)
+    setNewLabel('')
+    setNewTag('brand')
+  }
+
+  function startEdit(idx) {
+    setEditingIdx(idx)
+    setEditLabel(list[idx].l)
+    setEditTag(list[idx].t || 'brand')
+  }
+
+  function saveEdit(idx) {
+    const trimmed = editLabel.trim()
+    if (!trimmed) return
+    const updated = [...list]
+    updated[idx] = {
+      ...updated[idx],
+      l: trimmed,
+      t: editTag
+    }
+    setList(updated)
+    onSave(updated)
+    setEditingIdx(null)
+  }
+
+  function handleDelete(idx) {
+    if (list.length <= 1) {
+      alert('You must keep at least one disposition option.')
+      return
+    }
+    const item = list[idx]
+    if (window.confirm(`Are you sure you want to delete the disposition "${item.l}"?`)) {
+      const updated = list.filter((_, i) => i !== idx)
+      setList(updated)
+      onSave(updated)
+      if (editingIdx === idx) setEditingIdx(null)
+    }
+  }
+
+  function handleReset() {
+    if (window.confirm('Reset all dispositions to the 10 default options? Any custom ones will be cleared.')) {
+      setList(DEFAULT_DISP_OPTIONS)
+      onSave(DEFAULT_DISP_OPTIONS)
+      setEditingIdx(null)
+    }
+  }
+
+  return (
+    <Modal title="Manage Calling Dispositions" onClose={onClose} width={580}>
+      <div style={{ padding: '1.25rem 1.5rem', overflowY: 'auto', maxHeight: '65vh' }}>
+        <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 16px', lineHeight: 1.5 }}>
+          Customize the dispositions used for CRM call logging and tracking. Add new statuses, modify labels and colors, or remove options as needed.
+        </p>
+
+        {/* Add New Disposition Card */}
+        <div style={{ background: '#F8F9FC', padding: 14, borderRadius: 10, border: '1px solid var(--border)', marginBottom: 20 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            + Add New Disposition
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              value={newLabel}
+              onChange={e => setNewLabel(e.target.value)}
+              placeholder="e.g. Payment pending, Follow-up 2"
+              onKeyDown={e => e.key === 'Enter' && handleAdd()}
+              style={{ flex: 1, minWidth: 200, height: 36, borderRadius: 8, border: '1px solid var(--border)', padding: '0 10px', fontSize: 13 }}
+            />
+            <select
+              value={newTag}
+              onChange={e => setNewTag(e.target.value)}
+              style={{ height: 36, borderRadius: 8, border: '1px solid var(--border)', padding: '0 8px', fontSize: 12, background: '#FFF', cursor: 'pointer' }}
+            >
+              {COLOR_TAGS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+            <button className="btn btn-primary btn-sm" onClick={handleAdd} disabled={!newLabel.trim()} style={{ height: 36, padding: '0 14px' }}>
+              <Plus size={14} /> Add
+            </button>
+          </div>
+        </div>
+
+        {/* List Header */}
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>Active Dispositions ({list.length})</span>
+          <button
+            className="btn btn-ghost btn-xs"
+            onClick={handleReset}
+            style={{ color: '#4F46E5', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}
+          >
+            <RefreshCw size={11} /> Reset to Defaults
+          </button>
+        </div>
+
+        {/* Current Dispositions List */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {list.map((item, idx) => {
+            const isEditing = editingIdx === idx
+            return (
+              <div key={item.v || idx} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)',
+                background: '#FFF', gap: 10
+              }}>
+                {isEditing ? (
+                  <div style={{ display: 'flex', gap: 8, flex: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <input
+                      value={editLabel}
+                      onChange={e => setEditLabel(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && saveEdit(idx)}
+                      autoFocus
+                      style={{ flex: 1, minWidth: 150, height: 32, borderRadius: 6, border: '1px solid var(--border)', padding: '0 8px', fontSize: 13 }}
+                    />
+                    <select
+                      value={editTag}
+                      onChange={e => setEditTag(e.target.value)}
+                      style={{ height: 32, borderRadius: 6, border: '1px solid var(--border)', padding: '0 6px', fontSize: 12, background: '#FFF' }}
+                    >
+                      {COLOR_TAGS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                    </select>
+                    <button className="btn btn-primary btn-xs" onClick={() => saveEdit(idx)} style={{ height: 32, padding: '0 10px' }}>
+                      <Check size={12} /> Save
+                    </button>
+                    <button className="btn btn-ghost btn-xs" onClick={() => setEditingIdx(null)} style={{ height: 32 }}>
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span className={`badge badge-${item.t || 'gray'}`} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6 }}>
+                        {item.l}
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--text-3)' }}>({item.v})</span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <button
+                        className="btn btn-ghost btn-xs"
+                        onClick={() => startEdit(idx)}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-2)' }}
+                      >
+                        <Pencil size={12} /> Edit
+                      </button>
+                      <button
+                        className="btn btn-ghost btn-xs"
+                        onClick={() => handleDelete(idx)}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#EF4444' }}
+                        title="Delete disposition"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      <ModalFooter onClose={onClose}>
+        <button className="btn btn-primary" onClick={onClose}>Done</button>
+      </ModalFooter>
+    </Modal>
+  )
+}
 
 const DEPT_SCRIPTS = {
   IT: {
@@ -529,7 +729,26 @@ export default function CRMTasks() {
   const [loading, setLoading]       = useState(true)
   const [showUploadTasks, setShowUploadTasks] = useState(false)
   const [showUploadCRM, setShowUploadCRM]     = useState(false)
+  const [showManageDisp, setShowManageDisp]   = useState(false)
   const [leadState, setLeadState]   = useState({})
+
+  const [dispOptions, setDispOptions] = useState(() => {
+    const saved = localStorage.getItem('crm_call_dispositions')
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved)
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed
+      } catch (e) {
+        console.error(e)
+      }
+    }
+    return DEFAULT_DISP_OPTIONS
+  })
+
+  function updateDispOptions(newOptions) {
+    setDispOptions(newOptions)
+    localStorage.setItem('crm_call_dispositions', JSON.stringify(newOptions))
+  }
 
   // Dialer & Call States
   const [activeCall, setActiveCall] = useState(null)
@@ -763,6 +982,7 @@ Please complete this operational checklist item today.`
     <div style={{ paddingBottom: 40, fontFamily: 'var(--font-body)' }}>
       {showUploadTasks && <UploadTasksModal onClose={() => setShowUploadTasks(false)} onSaved={onTasksImported} />}
       {showUploadCRM   && <UploadCRMModal   onClose={() => setShowUploadCRM(false)}   onSaved={onLeadsImported} />}
+      {showManageDisp  && <ManageDispositionsModal options={dispOptions} onClose={() => setShowManageDisp(false)} onSave={updateDispOptions} />}
 
       {/* Page Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
@@ -1019,13 +1239,24 @@ Please complete this operational checklist item today.`
 
       {tab === 'crm' && (
         <div style={{ marginBottom: 24 }}>
-          {/* Summary badges */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-            {DISP_OPTIONS.map(d => (
-              <span key={d.v} className={`badge badge-${d.t}`} style={{ padding: '6px 12px', fontSize: 12, borderRadius: 8 }}>
-                {d.l}: <strong>{leads.filter(l => l.status === d.v).length}</strong>
-              </span>
-            ))}
+          {/* Summary badges & Manage Dispositions header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flex: 1 }}>
+              {dispOptions.map(d => (
+                <span key={d.v} className={`badge badge-${d.t || 'gray'}`} style={{ padding: '6px 12px', fontSize: 12, borderRadius: 8 }}>
+                  {d.l}: <strong>{leads.filter(l => l.status === d.v).length}</strong>
+                </span>
+              ))}
+            </div>
+
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => setShowManageDisp(true)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, borderRadius: 8, fontWeight: 600, flexShrink: 0, height: 32 }}
+            >
+              <SlidersHorizontal size={13} />
+              Manage Dispositions
+            </button>
           </div>
 
           {leads.length === 0 ? (
@@ -1041,7 +1272,7 @@ Please complete this operational checklist item today.`
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {leads.map(lead => {
                 const ls        = lsOf(lead)
-                const dispOpt   = DISP_OPTIONS.find(x => x.v === ls.disp)
+                const dispOpt   = dispOptions.find(x => x.v === ls.disp) || { v: ls.disp, l: ls.disp, t: 'gray' }
                 const phone     = lead.phone
                 const email     = lead.email
                 const waNumber  = phone?.replace(/[^0-9]/g, '')
@@ -1107,10 +1338,21 @@ Please complete this operational checklist item today.`
                       {/* Dropdown status switcher */}
                       <select
                         value={ls.disp}
-                        onChange={e => setLS(lead.id, { disp: e.target.value, saved: false })}
+                        onChange={e => {
+                          if (e.target.value === '__manage__') {
+                            setShowManageDisp(true)
+                          } else {
+                            setLS(lead.id, { disp: e.target.value, saved: false })
+                          }
+                        }}
                         style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer', background: '#F8F9FC', height: 28 }}
                       >
-                        {DISP_OPTIONS.map(d => <option key={d.v} value={d.v}>{d.l}</option>)}
+                        {dispOptions.map(d => <option key={d.v} value={d.v}>{d.l}</option>)}
+                        {!dispOptions.some(d => d.v === ls.disp) && ls.disp && (
+                          <option value={ls.disp}>{ls.disp}</option>
+                        )}
+                        <option disabled>──────────</option>
+                        <option value="__manage__">⚙️ + Manage Dispositions…</option>
                       </select>
 
                       {/* Notes toggle */}

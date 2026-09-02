@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { fetchCandidates, createCandidate, fetchJobs, fetchAllApplications } from '../lib/supabase.js'
 import { screenResume } from '../lib/claude.js'
 import { extractText, nameFromFile } from '../lib/fileExtract.js'
+import { getCleanCandidateEmail } from '../lib/emailUtils.js'
+import { getCleanCandidateName } from '../lib/nameUtils.js'
 import {
   Search, Star, MapPin, Briefcase, Upload, Zap, X, CheckCircle,
   AlertCircle, MinusCircle, FileText, Loader, TrendingUp, Users,
@@ -739,7 +741,7 @@ export default function Candidates() {
                       {/* Candidate Name & Current Role */}
                       <div style={{ marginBottom: 12 }}>
                         <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                          {c.name}
+                          {getCleanCandidateName(c)}
                           {isShortlisted && (
                             <span style={{ fontSize: 9, fontWeight: 700, color: '#10B981', background: '#ECFDF5', padding: '1px 5px', borderRadius: 4 }}>
                               Shortlisted
@@ -936,10 +938,10 @@ export default function Candidates() {
             <div className="card" style={{ alignSelf: 'flex-start', position: 'sticky', top: '2rem', maxHeight: 'calc(100vh - 4rem)', overflowY: 'auto', borderRadius: 16, border: '1px solid var(--border)', padding: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '1rem' }}>
                 <div className="avatar" style={{ width: 48, height: 48, fontSize: 16, background: '#EEF2FF', color: '#4F46E5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
-                  {selected.name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                  {getCleanCandidateName(selected).split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: 15 }}>{selected.name}</div>
+                  <div style={{ fontWeight: 700, fontSize: 15 }}>{getCleanCandidateName(selected)}</div>
                   <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{selected.role}{selected.experience ? ` · ${selected.experience}y exp` : ''}</div>
                 </div>
                 <button className="btn btn-ghost btn-sm" onClick={() => setSelected(null)} style={{ flexShrink: 0 }}><X size={14} /></button>
@@ -960,7 +962,7 @@ export default function Candidates() {
                 </div>
               )}
 
-              {[['Email', selected.email], ['Phone', selected.phone], ['Location', selected.location], ['Education', selected.education]].map(([l, v]) => (
+              {[['Email', getCleanCandidateEmail(selected) || '—'], ['Phone', selected.phone], ['Location', selected.location], ['Education', selected.education]].map(([l, v]) => (
                 <div key={l} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
                   <span style={{ color: 'var(--text-3)' }}>{l}</span>
                   <span style={{ fontWeight: 500, textAlign: 'right', maxWidth: 200, wordBreak: 'break-all' }}>{v || '—'}</span>

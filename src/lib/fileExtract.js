@@ -75,6 +75,8 @@ export async function extractText(file) {
   })
 }
 
+import { cleanCandidateName } from './nameUtils.js'
+
 export function nameFromFile(filename) {
-  return filename.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ').trim()
+  return cleanCandidateName(filename)
 }

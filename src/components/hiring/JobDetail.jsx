@@ -6,13 +6,14 @@ import { screenResume, generateJD } from '../../lib/claude.js'
 import { extractText, nameFromFile } from '../../lib/fileExtract.js'
 import { sendConsentEmail, sendInterviewEmail, sendOfferEmail } from '../../lib/resend.js'
 import { sendWhatsAppMessage } from '../../lib/twilio.js'
-import { extractCandidateEmail, buildEmailDraft } from '../../lib/emailUtils.js'
+import { extractCandidateEmail, buildEmailDraft, getCleanCandidateEmail } from '../../lib/emailUtils.js'
+import { cleanCandidateName, getCleanCandidateName } from '../../lib/nameUtils.js'
 import { ChevronLeft, Upload, Sparkles, Mail, Calendar, CheckCircle, XCircle, FileText, Loader, Send, Star, X, Pencil, RefreshCw, Phone, MessageCircle, Video, GraduationCap, ChevronDown, Download, AlertTriangle, Plus, Trash2, Search, SlidersHorizontal } from 'lucide-react'
 
 function getDisplayName(fullName) {
   const trimmed = (fullName || '').trim()
   if (!trimmed) return ''
-  return trimmed.split(/\s+/)[0]
+  return cleanCandidateName(trimmed)
 }
 
 export default function JobDetail() {
@@ -223,8 +224,8 @@ export default function JobDetail() {
   async function sendConsent(app) {
     try {
       await sendConsentEmail({
-        candidateName: app.candidates?.name,
-        candidateEmail: app.candidates?.email,
+        candidateName: getCleanCandidateName(app.candidates),
+        candidateEmail: getCleanCandidateEmail(app.candidates) || app.candidates?.email,
         jobTitle: job.title,
         jobLocation: job.location,
         salary: job.salary,
@@ -244,8 +245,9 @@ export default function JobDetail() {
     const company = import.meta.env.VITE_COMPANY_NAME || 'Mr. Manager'
     const acceptUrl = `${appUrl}/consent?token=${app.consent_token}&action=accept`
     const declineUrl = `${appUrl}/consent?token=${app.consent_token}&action=decline`
+    const candName = getCleanCandidateName(app.candidates)
     
-    const body = `Hi ${app.candidates.name} 👋,
+    const body = `Hi ${candName} 👋,
 
 We've reviewed your profile and believe you'd be a great fit for the ${job.title} position at ${company}.
 
@@ -273,7 +275,12 @@ The ${company} Hiring Team`
     const d = prompt('Enter interview date & time (e.g. 15 Jan 2025, 2:00 PM):')
     if (!d) return
     try {
-      await sendInterviewEmail({ candidateName: app.candidates?.name, candidateEmail: app.candidates?.email, jobTitle: job.title, interviewDate: d })
+      await sendInterviewEmail({
+        candidateName: getCleanCandidateName(app.candidates),
+        candidateEmail: getCleanCandidateEmail(app.candidates) || app.candidates?.email,
+        jobTitle: job.title,
+        interviewDate: d
+      })
       const updated = await updateApplication(app.id, { interview_date: d, status: 'interview_scheduled', interview_scheduled_at: new Date().toISOString() })
       setApps(prev => prev.map(a => a.id === app.id ? updated : a))
     } catch (e) { setError(e.message) }
@@ -287,7 +294,7 @@ The ${company} Hiring Team`
   }
 
   async function markHired(app) {
-    const candName = app.candidates?.name || 'this candidate'
+    const candName = getCleanCandidateName(app.candidates) || 'this candidate'
     const interviewedStatuses = ['video_interview', 'manual_round', 'interview_scheduled', 'interview_done']
     const hadInterview = interviewedStatuses.includes(app.status)
 
@@ -304,7 +311,7 @@ The ${company} Hiring Team`
     }
 
     const empId     = `EMP${Date.now().toString().slice(-6)}`
-    const candEmail = app.candidates?.email || `emp.${empId}@internal.local`
+    const candEmail = getCleanCandidateEmail(app.candidates) || app.candidates?.email || `emp.${empId}@internal.local`
     const isRealEmail = !candEmail.includes('@noemail.local') && !candEmail.includes('@internal.local')
 
     try {
@@ -380,14 +387,15 @@ The ${company} Hiring Team`
         const cvText = await extractText(file)
         setUploadRows(prev => prev.map((r, j) => j === idx ? { ...r, cvText, status: 'saving', msg: 'Saving…' } : r))
 
-        // Parse email + phone from CV text
+        // Parse email + phone + name from CV text
         const phoneMatch = cvText.match(/(?:\+?91[-.\s]?)?[6-9]\d{9}|(?:\+?[1-9]\d{0,2}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/)
         const extractedEmail = extractCandidateEmail(cvText, placeholderEmail)
         const extractedPhone = phoneMatch ? phoneMatch[0].replace(/[-.\s]/g, '').trim() : null
+        const finalName = getCleanCandidateName({ name, cv_text: cvText }) || name
 
         // Step 2 — create candidate + application in one shot
         const cand = await createCandidate({
-          name, email: extractedEmail, phone: extractedPhone || undefined, cv_text: cvText, source: 'upload', status: 'available'
+          name: finalName, email: extractedEmail, phone: extractedPhone || undefined, cv_text: cvText, source: 'upload', status: 'available'
         })
         const newApp = await createApplication({ job_id: id, candidate_id: cand.id, status: 'applied', consent_status: 'not_sent' })
         setApps(prev => [{ ...newApp, candidates: cand }, ...prev])
@@ -399,8 +407,9 @@ The ${company} Hiring Team`
   }
 
   function openEmailComposer(candidate, jobTitle, type = 'hiring') {
-    const recipientEmail = candidate?.email || ''
-    const draft = buildEmailDraft({ type, recipientEmail, name: candidate?.name, jobTitle })
+    const recipientEmail = getCleanCandidateEmail(candidate)
+    const recipientName  = getCleanCandidateName(candidate)
+    const draft = buildEmailDraft({ type, recipientEmail, name: recipientName, jobTitle })
     const mailtoUrl = `mailto:${encodeURIComponent(draft.to)}?subject=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`
     const gmailUrl = `https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(draft.to)}&su=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`
     const outlookUrl = `https://outlook.live.com/mail/0/deeplink/compose?to=${encodeURIComponent(draft.to)}&subject=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`
@@ -704,9 +713,9 @@ The ${company} Hiring Team`
             : visible.map(app => {
               const candidate   = app.candidates || {}
               const phone       = candidate.phone
-              const email       = candidate.email
-              const name        = candidate.name || ''
-              const displayName = getDisplayName(name)
+              const email       = getCleanCandidateEmail(candidate)
+              const name        = getCleanCandidateName(candidate)
+              const displayName = name
               const waNumber    = phone?.replace(/[^0-9]/g, '')
               const consented   = app.consent_status === 'accepted'
 
@@ -725,7 +734,7 @@ The ${company} Hiring Team`
                   <div className="avatar">{displayName.split(' ').map(w => w[0]).join('').slice(0, 2)}</div>
                   <div style={{ flex: 1, minWidth: 140 }}>
                     <div style={{ fontWeight: 600, fontSize: 14 }}>{displayName}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{email}</div>
+                    {email && <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{email}</div>}
                     {phone && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{phone}</div>}
                   </div>
 

@@ -1,4 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
+import { getCleanCandidateEmail } from './emailUtils.js'
+import { getCleanCandidateName } from './nameUtils.js'
 
 const rawUrl = import.meta.env.VITE_SUPABASE_URL || 'https://dcctifdgmiuyofkuydwm.supabase.co'
 const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjY3RpZmRnbWl1eW9ma3V5ZHdtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5OTYzNTMsImV4cCI6MjA5NjU3MjM1M30.XFThOMgfHTcj3woqbaH_JbQ2IJfS3wJLHp7xqAaJc6s'
@@ -22,6 +24,28 @@ export const isConfigured = !!(
 
 const supabaseUrl = rawUrl
 const supabaseKey = rawKey
+
+function hydrateCandidate(candidate) {
+  if (!candidate) return candidate
+  const cleanEmail = getCleanCandidateEmail(candidate)
+  const cleanName  = getCleanCandidateName(candidate)
+  const updates = {}
+
+  if (cleanEmail && cleanEmail !== candidate.email && /cv\.import|noemail/i.test(candidate.email)) {
+    candidate.email = cleanEmail
+    updates.email = cleanEmail
+  }
+
+  if (cleanName && cleanName !== 'Candidate' && cleanName !== candidate.name && (/^(?:cv|resume)/i.test(candidate.name) || /[-_]/.test(candidate.name) || /\.(pdf|docx?)/i.test(candidate.name) || /\s*(?:s\.?e\.?|b\.?d\.?e?\.?)$/i.test(candidate.name) || !candidate.name.includes(' '))) {
+    candidate.name = cleanName
+    updates.name = cleanName
+  }
+
+  if (isConfigured && candidate.id && Object.keys(updates).length > 0) {
+    supabase.from('candidates').update(updates).eq('id', candidate.id).then(() => {}).catch(() => {})
+  }
+  return candidate
+}
 
 if (!isConfigured) {
   console.warn('Supabase environment variables are missing or invalid in your .env file. The application is running in preview/fallback mode.')
@@ -407,21 +431,25 @@ export async function fetchInterviewApplications() {
     .in('status', ['video_interview', 'manual_round'])
     .order('updated_at', { ascending: false })
   if (error) throw error
-  return data
+  return (data || []).map(app => {
+    if (app.candidates) hydrateCandidate(app.candidates)
+    return app
+  })
 }
 
 // ─── CANDIDATES ───────────────────────────────────────────────
 
 export async function fetchCandidates() {
   if (!isConfigured) {
-    return getMockDB('candidates', MOCK_CANDIDATES_DEFAULT)
+    const list = getMockDB('candidates', MOCK_CANDIDATES_DEFAULT)
+    return list.map(c => hydrateCandidate(c))
   }
   const { data, error } = await supabase
     .from('candidates')
     .select('*')
     .order('rating', { ascending: false })
   if (error) throw error
-  return data
+  return (data || []).map(c => hydrateCandidate(c))
 }
 
 export async function createCandidate(candidate) {
@@ -439,6 +467,27 @@ export async function createCandidate(candidate) {
   const { data, error } = await supabase
     .from('candidates')
     .insert(candidate)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function updateCandidate(id, updates) {
+  if (!isConfigured) {
+    const candidates = getMockDB('candidates', MOCK_CANDIDATES_DEFAULT)
+    const idx = candidates.findIndex(c => c.id === id)
+    if (idx !== -1) {
+      candidates[idx] = { ...candidates[idx], ...updates, updated_at: new Date().toISOString() }
+      saveMockDB('candidates', candidates)
+      return candidates[idx]
+    }
+    return null
+  }
+  const { data, error } = await supabase
+    .from('candidates')
+    .update(updates)
+    .eq('id', id)
     .select()
     .single()
   if (error) throw error
@@ -464,7 +513,10 @@ export async function fetchApplicationsForJob(jobId) {
     .eq('job_id', jobId)
     .order('screen_score', { ascending: false, nullsFirst: false })
   if (error) throw error
-  return data
+  return (data || []).map(app => {
+    if (app.candidates) hydrateCandidate(app.candidates)
+    return app
+  })
 }
 
 export async function createApplication(application) {

@@ -1,16 +1,18 @@
 import { useState, useEffect } from 'react'
-import { fetchInterviewApplications, updateApplication, fetchAllApplications, fetchConsentAuditLogs } from '../lib/supabase.js'
+import { fetchInterviewApplications, updateApplication, fetchAllApplications, fetchConsentAuditLogs, updateCandidate } from '../lib/supabase.js'
 import NotificationBell from '../components/layout/NotificationBell.jsx'
 import {
   Calendar, Video, FileText, Phone, Mail, MessageCircle,
   CheckCircle, Copy, X, User, Users, Search, Briefcase, ChevronDown,
   Clock, ChevronLeft, ChevronRight, ListFilter, HelpCircle, ArrowRight
 } from 'lucide-react'
-import { buildEmailDraft } from '../lib/emailUtils.js'
+import { buildEmailDraft, getCleanCandidateEmail } from '../lib/emailUtils.js'
+import { getCleanCandidateName } from '../lib/nameUtils.js'
 
 function openInterviewEmail(email, name, jobTitle) {
-  if (!email) {
-    alert('No email on file for this candidate.')
+  const clean = email && !/cv\.import|noemail/i.test(email) ? email : ''
+  if (!clean) {
+    alert('No valid email on file for this candidate.')
     return
   }
 
@@ -47,7 +49,8 @@ function ScheduleModal({ app, onClose, onScheduled }) {
   const [ivrPhone, setIvrPhone] = useState('')
 
   // Interviewee details
-  const [iveeEmail, setIveeEmail] = useState(candidate.email || '')
+  const [iveeName,  setIveeName]  = useState(() => getCleanCandidateName(candidate))
+  const [iveeEmail, setIveeEmail] = useState(() => getCleanCandidateEmail(candidate))
   const [iveePhone, setIveePhone] = useState(candidate.phone || '')
 
   // WhatsApp notification checkbox
@@ -63,10 +66,12 @@ function ScheduleModal({ app, onClose, onScheduled }) {
   const dateDisplay = date ? new Date(date).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : ''
   const timeDisplay = time ? (() => { const [h, m] = time.split(':'); const hr = +h; return `${hr % 12 || 12}:${m} ${hr >= 12 ? 'PM' : 'AM'}` })() : ''
 
+  const candidateDisplayName = (iveeName || '').trim() || getCleanCandidateName(candidate) || 'the candidate'
+
   const clientMessage = date && time
     ? `Dear Team,
 
-We are pleased to inform you that ${candidate.name || 'the candidate'} has been scheduled for a ${typeName} for the ${job.title || 'position'} role${job.department ? ` (${job.department})` : ''}.
+We are pleased to inform you that ${candidateDisplayName} has been scheduled for a ${typeName} for the ${job.title || 'position'} role${job.department ? ` (${job.department})` : ''}.
 
 Interview Details:
 • Type: ${typeName}
@@ -80,11 +85,12 @@ Mr. Manager Team`
     : ''
 
   function buildWAMessage(toRole) {
+    const targetCandidateName = (iveeName || '').trim() || getCleanCandidateName(candidate) || 'Candidate'
     const greeting = toRole === 'interviewer'
       ? `Dear ${ivrName || 'Team'},`
-      : `Dear ${candidate.name || 'Candidate'},`
+      : `Dear ${targetCandidateName},`
     const body = toRole === 'interviewer'
-      ? `You have been scheduled to interview *${candidate.name || 'the candidate'}* for the *${job.title || 'position'}* role${job.department ? ` (${job.department})` : ''}.`
+      ? `You have been scheduled to interview *${targetCandidateName}* for the *${job.title || 'position'}* role${job.department ? ` (${job.department})` : ''}.`
       : `Your interview for the *${job.title || 'position'}* role${job.department ? ` (${job.department})` : ''} has been scheduled.`
     return `${greeting}\n\n${body}\n\n*Interview Details:*\n• Type: ${typeName}\n• Date: ${dateDisplay}\n• Time: ${timeDisplay}${meetingLink ? `\n• Link: ${meetingLink}` : ''}${notes ? `\n\nNotes: ${notes}` : ''}\n\nBest regards,\nMr. Manager Team`
   }
@@ -102,7 +108,46 @@ Mr. Manager Team`
         interviewer_email: ivrEmail || null,
         interviewer_phone: ivrPhone || null,
       })
-      onScheduled({ ...app, ...updated })
+
+      const cleanIveeName  = (iveeName  || '').trim()
+      const cleanIveeEmail = (iveeEmail || '').trim()
+      const cleanIveePhone = (iveePhone || '').trim()
+
+      if (candidate.id) {
+        const candidateUpdates = {}
+        if (cleanIveeName && cleanIveeName !== candidate.name) {
+          candidateUpdates.name = cleanIveeName
+        }
+        if (cleanIveeEmail && cleanIveeEmail !== candidate.email && !cleanIveeEmail.includes('noemail')) {
+          candidateUpdates.email = cleanIveeEmail
+        }
+        if (cleanIveePhone && cleanIveePhone !== candidate.phone) {
+          candidateUpdates.phone = cleanIveePhone
+        }
+        if (Object.keys(candidateUpdates).length > 0) {
+          try {
+            const updatedCand = await updateCandidate(candidate.id, candidateUpdates)
+            if (updatedCand) {
+              candidate.name  = updatedCand.name  || candidate.name
+              candidate.email = updatedCand.email || candidate.email
+              candidate.phone = updatedCand.phone || candidate.phone
+            }
+          } catch (candErr) {
+            console.warn('Candidate update warning:', candErr)
+          }
+        }
+      }
+
+      onScheduled({
+        ...app,
+        ...updated,
+        candidates: {
+          ...candidate,
+          name: cleanIveeName || candidate.name,
+          email: cleanIveeEmail || candidate.email,
+          phone: cleanIveePhone || candidate.phone,
+        }
+      })
 
       if (sendWA) {
         const ivrNum  = ivrPhone.replace(/[^0-9]/g, '')
@@ -226,7 +271,7 @@ Mr. Manager Team`
               Schedule Interview
             </h2>
             <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-3)' }}>
-              {candidate.name} · {job.title} · <strong>{typeName}</strong>
+              {candidateDisplayName} · {job.title} · <strong>{typeName}</strong>
             </p>
           </div>
           <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ padding: 4 }}><X size={18} /></button>
@@ -277,8 +322,12 @@ Mr. Manager Team`
 
           {/* Interviewee details */}
           <div style={{ marginBottom: 20 }}>
-            <div style={sectionLabel}><User size={12} /> Interviewee — <span style={{ color: 'var(--text-2)' }}>{candidate.name}</span></div>
+            <div style={sectionLabel}><User size={12} /> Interviewee</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px' }}>
+              <div style={{ gridColumn: '1/-1' }}>
+                <label style={{ fontSize: 12, color: 'var(--text-3)', display: 'block', marginBottom: 6, fontWeight: 500 }}>Candidate Name</label>
+                <input value={iveeName} onChange={e => setIveeName(e.target.value)} placeholder="e.g. Abhishek Singh" style={{ width: '100%', borderRadius: 8, height: 38 }} />
+              </div>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text-3)', display: 'block', marginBottom: 6, fontWeight: 500 }}>Email</label>
                 <input type="email" value={iveeEmail} onChange={e => setIveeEmail(e.target.value)} placeholder="candidate@email.com" style={{ width: '100%', borderRadius: 8, height: 38 }} />
@@ -1034,12 +1083,15 @@ export default function Interviews() {
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         fontSize: 14, fontWeight: 700, flexShrink: 0
                       }}>
-                        {candidate.name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '??'}
+                        {(() => {
+                          const candName = getCleanCandidateName(candidate)
+                          return candName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '??'
+                        })()}
                       </div>
 
                       <div style={{ flex: 1, minWidth: 160 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                          <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>{candidate.name}</h3>
+                          <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>{getCleanCandidateName(candidate)}</h3>
                           {isScheduled && (
                             <span style={{ fontSize: 9, fontWeight: 700, color: '#10B981', background: '#ECFDF5', padding: '1px 6px', borderRadius: 99 }}>
                               Scheduled
@@ -1069,7 +1121,15 @@ export default function Interviews() {
                         </div>
 
                         <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>
-                          {candidate.email} {candidate.phone && <span style={{ marginLeft: 6 }}>• {candidate.phone}</span>}
+                          {(() => {
+                            const cleanMail = getCleanCandidateEmail(candidate)
+                            return (
+                              <>
+                                {cleanMail ? cleanMail : <span style={{ fontStyle: 'italic', color: 'var(--text-3)' }}>No email registered</span>}
+                                {candidate.phone && <span style={{ marginLeft: 6 }}>• {candidate.phone}</span>}
+                              </>
+                            )
+                          })()}
                         </div>
                       </div>
                     </div>
@@ -1114,12 +1174,12 @@ export default function Interviews() {
 
                         <button
                           type="button"
-                          onClick={() => openInterviewEmail(candidate.email, candidate.name, job.title)}
+                          onClick={() => openInterviewEmail(candidate.email, getCleanCandidateName(candidate), job.title)}
                           style={{ background: 'none', border: 'none', display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-2)', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
                           <Mail size={12} color="#4F46E5" /> Email
                         </button>
 
-                        <a href={waNumber ? `https://wa.me/${waNumber}?text=Hi ${encodeURIComponent(candidate.name)}, we'd like to confirm your interview schedule.` : undefined}
+                        <a href={waNumber ? `https://wa.me/${waNumber}?text=Hi ${encodeURIComponent(getCleanCandidateName(candidate))}, we'd like to confirm your interview schedule.` : undefined}
                           onClick={!waNumber ? e => { e.preventDefault(); alert('No phone number on file.') } : undefined}
                           target="_blank" rel="noopener noreferrer"
                           style={{ display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none', color: 'var(--text-2)', fontSize: 12, fontWeight: 500 }}>
