@@ -130,7 +130,12 @@ export function AuthProvider({ children }) {
         }
       }
     } catch (e) {
-      setError(e.message || 'Registration failed')
+      const msg = e.message || 'Registration failed'
+      if (msg.toLowerCase().includes('database error saving new user')) {
+        setError('Database error saving new user: The Supabase profiles table is missing the permissions column. Run the SQL script in supabase/fix_auth_trigger.sql in your Supabase SQL Editor.')
+      } else {
+        setError(msg)
+      }
       throw e
     }
   }

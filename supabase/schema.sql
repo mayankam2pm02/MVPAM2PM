@@ -33,7 +33,26 @@ BEGIN
     COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)),
     COALESCE(NEW.raw_user_meta_data->>'role', 'interviewer'),
     COALESCE(NEW.raw_user_meta_data->'permissions', '{}'::jsonb)
-  );
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    email = EXCLUDED.email,
+    name = COALESCE(EXCLUDED.name, profiles.name),
+    role = COALESCE(EXCLUDED.role, profiles.role),
+    permissions = COALESCE(EXCLUDED.permissions, profiles.permissions);
+  RETURN NEW;
+EXCEPTION WHEN OTHERS THEN
+  BEGIN
+    INSERT INTO profiles (id, email, name, role)
+    VALUES (
+      NEW.id,
+      NEW.email,
+      COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)),
+      'interviewer'
+    )
+    ON CONFLICT (id) DO NOTHING;
+  EXCEPTION WHEN OTHERS THEN
+    NULL;
+  END;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
