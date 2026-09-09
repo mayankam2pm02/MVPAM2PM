@@ -41,7 +41,9 @@ const BRAND_SLIDES = [
 ]
 
 export default function Login() {
-  const { login, register, error } = useAuth()
+  const { login, register, error: authError, setError } = useAuth()
+  const [formError, setFormError] = useState('')
+  const displayError = formError || authError
   const [mode, setMode] = useState('login') // 'login' | 'register'
   
   // Fields
@@ -71,7 +73,7 @@ export default function Login() {
     const value = label.toLowerCase().replace(/[^a-z0-9]/g, '_')
     
     if (workspaceRoles.some(r => r.value === value)) {
-      setError('Role already exists.')
+      setFormError('Role already exists.')
       return
     }
 
@@ -101,6 +103,8 @@ export default function Login() {
     e.preventDefault()
     setLoading(true)
     setSuccess('')
+    setFormError('')
+    if (setError) setError('')
     try {
       if (mode === 'login') {
         await login(email, password)
@@ -592,7 +596,7 @@ export default function Login() {
               )}
 
               {/* Status Feedbacks */}
-              {error && (
+              {displayError && (
                 <div style={{
                   background: 'rgba(239, 68, 68, 0.1)',
                   border: '1px solid rgba(239, 68, 68, 0.2)',
@@ -602,7 +606,7 @@ export default function Login() {
                   fontSize: 13,
                   marginBottom: 16
                 }}>
-                  {error}
+                  {displayError}
                 </div>
               )}
 
@@ -639,14 +643,14 @@ export default function Login() {
               {mode === 'login' ? (
                 <>
                   Don't have an account?
-                  <span className="toggle-btn" onClick={() => { setMode('register'); setError(''); setSuccess('') }}>
+                  <span className="toggle-btn" onClick={() => { setMode('register'); setFormError(''); if (setError) setError(''); setSuccess('') }}>
                     Create an account
                   </span>
                 </>
               ) : (
                 <>
                   Already have an account?
-                  <span className="toggle-btn" onClick={() => { setMode('login'); setError(''); setSuccess('') }}>
+                  <span className="toggle-btn" onClick={() => { setMode('login'); setFormError(''); if (setError) setError(''); setSuccess('') }}>
                     Sign in
                   </span>
                 </>

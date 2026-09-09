@@ -148,14 +148,18 @@ export function AuthProvider({ children }) {
   }
 
   // Combined user object for easy access
-  const currentUser = profile ? {
-    ...profile,
-    email: user?.email,
+  const currentUser = (user || profile) ? {
+    ...(profile || {}),
+    id: profile?.id || user?.id,
+    name: profile?.name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'User',
+    email: profile?.email || user?.email,
+    role: profile?.role || user?.user_metadata?.role || 'employee',
+    title: profile?.title || user?.user_metadata?.title || 'Team Member',
     supabaseId: user?.id
   } : null
 
   return (
-    <AuthContext.Provider value={{ user: currentUser, loading, error, login, logout, register }}>
+    <AuthContext.Provider value={{ user: currentUser, loading, error, setError, login, logout, register }}>
       {children}
     </AuthContext.Provider>
   )

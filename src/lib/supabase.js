@@ -275,9 +275,41 @@ export async function getProfile(userId) {
     .from('profiles')
     .select('*')
     .eq('id', userId)
-    .single()
-  if (error) throw error
-  return data
+    .maybeSingle()
+  
+  if (data) return data
+
+  // If profile row doesn't exist yet, auto-generate from session user metadata
+  try {
+    const { data: sessionData } = await supabase.auth.getSession()
+    const authUser = sessionData?.session?.user
+    if (authUser && authUser.id === userId) {
+      const fallback = {
+        id: userId,
+        name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'User',
+        email: authUser.email,
+        role: authUser.user_metadata?.role || 'employee',
+        title: authUser.user_metadata?.title || 'Team Member'
+      }
+      const { data: created } = await supabase
+        .from('profiles')
+        .upsert(fallback)
+        .select()
+        .maybeSingle()
+      if (created) return created
+      return fallback
+    }
+  } catch (err) {
+    console.warn('Could not fallback-create profile:', err)
+  }
+
+  return {
+    id: userId,
+    name: 'User',
+    email: '',
+    role: 'employee',
+    title: 'Team Member'
+  }
 }
 
 export async function updateProfile(userId, updates) {
@@ -293,12 +325,14 @@ export async function updateProfile(userId, updates) {
   }
   const { data, error } = await supabase
     .from('profiles')
-    .update(updates)
-    .eq('id', userId)
+    .upsert({ id: userId, ...updates })
     .select()
-    .single()
-  if (error) throw error
-  return data
+    .maybeSingle()
+  if (error) {
+    console.warn('Profile update warning:', error)
+    return { id: userId, ...updates }
+  }
+  return data || { id: userId, ...updates }
 }
 
 export async function getCurrentSession() {

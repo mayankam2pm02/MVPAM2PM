@@ -54,6 +54,20 @@ const DEFAULT_ROLE_PERMISSIONS = {
     reports: { view: false, create: false, update: false, delete: false },
     prompts: { view: false, create: false, update: false, delete: false },
     settings: { view: false, create: false, update: false, delete: false }
+  },
+  employee: {
+    dashboard: { view: true, create: false, update: false, delete: false },
+    hiring: { view: false, create: false, update: false, delete: false },
+    interviews: { view: false, create: false, update: false, delete: false },
+    candidates: { view: false, create: false, update: false, delete: false },
+    onboarding: { view: true, create: false, update: true, delete: false },
+    training: { view: true, create: false, update: true, delete: false },
+    crm: { view: true, create: true, update: true, delete: false },
+    campaigns: { view: false, create: false, update: false, delete: false },
+    portals: { view: false, create: false, update: false, delete: false },
+    reports: { view: false, create: false, update: false, delete: false },
+    prompts: { view: false, create: false, update: false, delete: false },
+    settings: { view: false, create: false, update: false, delete: false }
   }
 }
 
@@ -105,6 +119,8 @@ export function saveRoleModulePermissions(permissions) {
 
 export function hasModulePermission(role, moduleKey) {
   if (!role) return false
+  if (role === 'admin') return true
+  if (moduleKey === 'dashboard') return true
   const permissions = getRoleModulePermissions()
   const val = permissions[role]?.[moduleKey]
   if (val && typeof val === 'object') {
