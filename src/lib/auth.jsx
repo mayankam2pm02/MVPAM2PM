@@ -102,10 +102,16 @@ export function AuthProvider({ children }) {
   async function login(email, password) {
     setError('')
     try {
-      await signIn(email, password)
-      // onAuthStateChange will update state
+      const data = await signIn(email, password)
+      return data
     } catch (e) {
-      setError(e.message || 'Invalid email or password')
+      const msg = e.message || 'Invalid email or password'
+      if (msg.toLowerCase().includes('email not confirmed')) {
+        setError('Email not confirmed. Please click the confirmation link sent to your email, or run the SQL in supabase/fix_auth_trigger.sql to auto-confirm.')
+      } else {
+        setError(msg)
+      }
+      throw e
     }
   }
 
@@ -129,6 +135,7 @@ export function AuthProvider({ children }) {
           console.warn('Failed to set profile title during signup:', e)
         }
       }
+      return data
     } catch (e) {
       const msg = e.message || 'Registration failed'
       if (msg.toLowerCase().includes('database error saving new user')) {

@@ -106,11 +106,20 @@ export default function Login() {
         await login(email, password)
       } else {
         const roleObj = workspaceRoles.find(r => r.value === role) || { authRole: 'employee', label: 'Employee' }
-        await register(email, password, name, roleObj.authRole, roleObj.label)
-        setSuccess('Account created successfully! Logging you in...')
-        setTimeout(() => {
-          login(email, password)
-        }, 1500)
+        const res = await register(email, password, name, roleObj.authRole, roleObj.label)
+        if (res?.session) {
+          setSuccess('Account created successfully! Logging you in...')
+          setTimeout(() => {
+            login(email, password)
+          }, 1000)
+        } else {
+          try {
+            await login(email, password)
+            setSuccess('Account created successfully! Logging you in...')
+          } catch (loginErr) {
+            setSuccess('')
+          }
+        }
       }
     } catch (err) {
       // Error handled by AuthContext

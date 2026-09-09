@@ -52,3 +52,22 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- 5. Auto-confirm all existing users so they can log in right now
+UPDATE auth.users 
+SET email_confirmed_at = COALESCE(email_confirmed_at, NOW())
+WHERE email_confirmed_at IS NULL;
+
+-- 6. Automatically confirm all future signups immediately
+CREATE OR REPLACE FUNCTION public.auto_confirm_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.email_confirmed_at = COALESCE(NEW.email_confirmed_at, NOW());
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_auto_confirm_user ON auth.users;
+CREATE TRIGGER trg_auto_confirm_user
+  BEFORE INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.auto_confirm_new_user();
