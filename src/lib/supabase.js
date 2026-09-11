@@ -769,7 +769,7 @@ export async function uploadTrainingFile(file, path) {
 }
 
 export async function fetchTrainingProgress(employeeId) {
-  if (!isConfigured) {
+  const getLocalProgress = () => {
     const progress = getMockDB('training_progress', [])
     const modules = getMockDB('training_modules', MOCK_TRAINING_MODULES_DEFAULT)
     return progress
@@ -779,38 +779,106 @@ export async function fetchTrainingProgress(employeeId) {
         training_modules: modules.find(m => m.id === p.module_id) || null
       }))
   }
-  const { data, error } = await supabase
-    .from('training_progress')
-    .select('*, training_modules(*)')
-    .eq('employee_id', employeeId)
-  if (error) throw error
-  return data
+
+  if (!isConfigured) {
+    return getLocalProgress()
+  }
+
+  try {
+    const isUuid = typeof employeeId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(employeeId)
+    if (!isUuid) {
+      return getLocalProgress()
+    }
+
+    const { data, error } = await supabase
+      .from('training_progress')
+      .select('*, training_modules(*)')
+      .eq('employee_id', employeeId)
+
+    if (error) {
+      console.warn('Supabase fetchTrainingProgress error, falling back to local storage:', error.message)
+      return getLocalProgress()
+    }
+
+    const localData = getLocalProgress()
+    if (!data || data.length === 0) {
+      return localData
+    }
+
+    const seen = new Set(data.map(p => p.module_id))
+    const combined = [...data]
+    localData.forEach(lp => {
+      if (!seen.has(lp.module_id)) {
+        combined.push(lp)
+      }
+    })
+    return combined
+  } catch (err) {
+    console.warn('Failed to fetch training progress from Supabase, fell back to local storage:', err.message)
+    return getLocalProgress()
+  }
 }
 
 export async function upsertTrainingProgress(record) {
-  if (!isConfigured) {
-    const progress = getMockDB('training_progress', [])
-    const idx = progress.findIndex(p => p.employee_id === record.employee_id && p.module_id === record.module_id)
-    const updatedRecord = {
-      id: record.id || 'tp-' + Date.now(),
-      ...record,
-      updated_at: new Date().toISOString()
-    }
-    if (idx !== -1) {
-      progress[idx] = { ...progress[idx], ...updatedRecord }
-    } else {
-      progress.push(updatedRecord)
-    }
-    saveMockDB('training_progress', progress)
-    return updatedRecord
+  const status = record.status || (record.completed ? 'completed' : 'in_progress')
+  const completedAt = record.completed_at || (status === 'completed' ? (record.updated_at || new Date().toISOString()) : null)
+
+  // 1. Always keep local mock DB updated immediately
+  const progress = getMockDB('training_progress', [])
+  const idx = progress.findIndex(p => p.employee_id === record.employee_id && p.module_id === record.module_id)
+  const localRecord = {
+    id: record.id || (idx !== -1 ? progress[idx].id : 'tp-' + Date.now()),
+    employee_id: record.employee_id,
+    module_id: record.module_id,
+    status: status,
+    completed: status === 'completed',
+    completed_at: completedAt,
+    updated_at: new Date().toISOString()
   }
-  const { data, error } = await supabase
-    .from('training_progress')
-    .upsert(record)
-    .select()
-    .single()
-  if (error) throw error
-  return data
+  if (idx !== -1) {
+    progress[idx] = { ...progress[idx], ...localRecord }
+  } else {
+    progress.push(localRecord)
+  }
+  saveMockDB('training_progress', progress)
+
+  if (!isConfigured) {
+    return localRecord
+  }
+
+  // 2. If Supabase is configured, sanitize payload to only valid columns:
+  // employee_id, module_id, status, completed_at
+  try {
+    const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val)
+    if (!isUuid(record.employee_id) || !isUuid(record.module_id)) {
+      return localRecord
+    }
+
+    const dbRecord = {
+      employee_id: record.employee_id,
+      module_id: record.module_id,
+      status: status,
+      completed_at: completedAt
+    }
+    if (record.id && isUuid(record.id)) {
+      dbRecord.id = record.id
+    }
+
+    const { data, error } = await supabase
+      .from('training_progress')
+      .upsert(dbRecord, { onConflict: 'employee_id,module_id' })
+      .select()
+      .maybeSingle()
+
+    if (error) {
+      console.warn('Supabase upsertTrainingProgress error, fallback to local storage:', error.message)
+      return localRecord
+    }
+    return data || localRecord
+  } catch (err) {
+    console.warn('Failed to upsert training progress to Supabase, fell back to local storage:', err.message)
+    return localRecord
+  }
 }
 
 export async function saveQuizResult(result) {
@@ -1102,7 +1170,7 @@ export async function upsertOnboardingProgress(employeeId, record) {
         ...record,
         employee_id: employeeId,
         updated_at: new Date().toISOString()
-      })
+      }, { onConflict: 'employee_id' })
       .select()
       .maybeSingle()
     if (error) throw error

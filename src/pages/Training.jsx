@@ -763,7 +763,9 @@ export default function Training() {
                 const list = allProgress[i] || []
                 const doneMap = {}
                 list.forEach(p => {
-                  doneMap[p.module_id] = true
+                  if (p.status === 'completed' || p.completed === true) {
+                    doneMap[p.module_id] = true
+                  }
                 })
                 initialCompleted[emp.id] = doneMap
               })
@@ -783,6 +785,21 @@ export default function Training() {
     setSelectedEmp(emp)
     setQuizStarted(false); setSubmitted(false); setAnswers({})
     setTicketSent(false); setTicket(''); setExpanded(null); setPlayingMod(null)
+    if (emp && !completedMods[emp.id]) {
+      fetchTrainingProgress(emp.id)
+        .then(list => {
+          if (list && list.length > 0) {
+            const doneMap = {}
+            list.forEach(p => {
+              if (p.status === 'completed' || p.completed === true) {
+                doneMap[p.module_id] = true
+              }
+            })
+            setCompleted(prev => ({ ...prev, [emp.id]: doneMap }))
+          }
+        })
+        .catch(console.error)
+    }
   }
 
   async function changeTrainingType(newType) {
@@ -818,33 +835,38 @@ export default function Training() {
 
   const empMods  = selectedEmp ? getModsForEmp(selectedEmp) : []
   const done     = completedMods[selectedEmp?.id] || {}
-  const progress = empMods.length ? Math.round(Object.keys(done).length / empMods.length * 100) : 0
+  const completedCount = empMods.filter(m => done[m.id]).length
+  const progress = empMods.length ? Math.round((completedCount / empMods.length) * 100) : 0
   const allDone  = empMods.length > 0 && empMods.every(m => done[m.id])
   const score    = submitted ? QUIZ.reduce((s, q, i) => s + (answers[i] === q.ans ? 1 : 0), 0) : null
   const passed   = score !== null && score >= 3
 
   function markDone(modId) {
     if (!selectedEmp) return
+
+    // 1. Optimistic UI update: instantly mark done so progress bar and checkmark update immediately
+    setCompleted(prev => ({
+      ...prev,
+      [selectedEmp.id]: {
+        ...(prev[selectedEmp.id] || {}),
+        [modId]: true
+      }
+    }))
+    setPlayingMod(null)
+
+    // 2. Persist to storage & database
     const record = {
       employee_id: selectedEmp.id,
       module_id: modId,
+      status: 'completed',
       completed: true,
-      updated_at: new Date().toISOString()
+      completed_at: new Date().toISOString()
     }
     
     upsertTrainingProgress(record)
-      .then(() => {
-        setCompleted(prev => ({
-          ...prev,
-          [selectedEmp.id]: {
-            ...(prev[selectedEmp.id] || {}),
-            [modId]: true
-          }
-        }))
+      .catch(err => {
+        console.error('Failed to save training progress:', err)
       })
-      .catch(console.error)
-      
-    setPlayingMod(null)
   }
 
   // Derive metrics
@@ -859,15 +881,16 @@ export default function Training() {
   const pendingTrainees = employees.filter(emp => {
     const list = getModsForEmp(emp)
     const doneMap = completedMods[emp.id] || {}
-    const completedCount = Object.keys(doneMap).length
-    return list.length > 0 && completedCount < list.length
+    const doneCount = list.filter(m => doneMap[m.id]).length
+    return list.length > 0 && doneCount < list.length
   }).length
 
   // Average progress across all trainees
   const totalProgressSum = employees.reduce((sum, emp) => {
     const list = getModsForEmp(emp)
     const doneMap = completedMods[emp.id] || {}
-    const pct = list.length ? Math.round(Object.keys(doneMap).length / list.length * 100) : 0
+    const doneCount = list.filter(m => doneMap[m.id]).length
+    const pct = list.length ? Math.round((doneCount / list.length) * 100) : 0
     return sum + pct
   }, 0)
   const avgProgress = totalTrainees > 0 ? Math.round(totalProgressSum / totalTrainees) : 0
@@ -883,7 +906,8 @@ export default function Training() {
   const filteredEmployees = employees.filter(emp => {
     const list = getModsForEmp(emp)
     const doneMap = completedMods[emp.id] || {}
-    const pct = list.length ? Math.round(Object.keys(doneMap).length / list.length * 100) : 0
+    const doneCount = list.filter(m => doneMap[m.id]).length
+    const pct = list.length ? Math.round((doneCount / list.length) * 100) : 0
     
     // Search filter
     const matchesSearch = emp.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1404,7 +1428,9 @@ export default function Training() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {filteredEmployees.map(emp => {
               const mlist = getModsForEmp(emp)
-              const pct   = mlist.length ? Math.round(Object.keys(completedMods[emp.id] || {}).length / mlist.length * 100) : 0
+              const empDone = completedMods[emp.id] || {}
+              const doneCount = mlist.filter(m => empDone[m.id]).length
+              const pct   = mlist.length ? Math.round((doneCount / mlist.length) * 100) : 0
               const ttype = trainingTypes.find(t => t.value === (emp.training_type || 'general'))
               const isSelected = selectedEmp?.id === emp.id
 

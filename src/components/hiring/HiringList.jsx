@@ -5,7 +5,7 @@ import { fetchJobs, fetchAllApplications } from '../../lib/supabase.js'
 import NotificationBell from '../layout/NotificationBell.jsx'
 import {
   Plus, Search, Briefcase, Users, BarChart3, Clock,
-  ChevronDown, MapPin, Calendar, DollarSign, MoreVertical,
+  ChevronDown, MapPin, Calendar, DollarSign,
   ListFilter, Code, GraduationCap, ChevronRight, HelpCircle
 } from 'lucide-react'
 
@@ -458,10 +458,6 @@ export default function HiringList() {
 
                 {/* Right stats and progress column */}
                 <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', alignItems: 'stretch' }}>
-                  <div style={{ alignSelf: 'flex-end', cursor: 'pointer' }}>
-                    <MoreVertical size={16} color="var(--text-3)" />
-                  </div>
-
                   {/* Pipeline Progress meter */}
                   <div style={{ margin: '12px 0 20px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, marginBottom: 6 }}>
@@ -473,12 +469,12 @@ export default function HiringList() {
                     </div>
                   </div>
 
-                  {/* Job Action buttons */}
-                  <div style={{ display: 'flex', gap: 10 }}>
+                  {/* Job Action button */}
+                  <div>
                     <button
                       onClick={() => navigate(`/hiring/${job.id}`)}
                       style={{
-                        flex: 1,
+                        width: '100%',
                         height: 38,
                         borderRadius: 8,
                         border: '1px solid var(--border)',
@@ -490,30 +486,11 @@ export default function HiringList() {
                         display: 'inline-flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        gap: 6
+                        gap: 6,
+                        transition: 'all 0.2s'
                       }}
                     >
                       <ListFilter size={13} /> View details
-                    </button>
-                    <button
-                      onClick={() => navigate(`/hiring/${job.id}`)}
-                      style={{
-                        flex: 1,
-                        height: 38,
-                        borderRadius: 8,
-                        border: 'none',
-                        background: '#4F46E5',
-                        color: '#FFF',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 6
-                      }}
-                    >
-                      <Users size={13} /> View applicants
                     </button>
                   </div>
                 </div>
@@ -624,10 +601,6 @@ export default function HiringList() {
 
                 {/* Right stats and progress column */}
                 <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', alignItems: 'stretch' }}>
-                  <div style={{ alignSelf: 'flex-end', cursor: 'pointer' }}>
-                    <MoreVertical size={16} color="var(--text-3)" />
-                  </div>
-
                   {/* Pipeline Progress meter */}
                   <div style={{ margin: '12px 0 20px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, marginBottom: 6 }}>
@@ -639,12 +612,12 @@ export default function HiringList() {
                     </div>
                   </div>
 
-                  {/* Job Action buttons */}
-                  <div style={{ display: 'flex', gap: 10 }}>
+                  {/* Job Action button */}
+                  <div>
                     <button
                       onClick={() => navigate(`/hiring/${job.id}`)}
                       style={{
-                        flex: 1,
+                        width: '100%',
                         height: 38,
                         borderRadius: 8,
                         border: '1px solid var(--border)',
@@ -656,30 +629,11 @@ export default function HiringList() {
                         display: 'inline-flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        gap: 6
+                        gap: 6,
+                        transition: 'all 0.2s'
                       }}
                     >
                       <ListFilter size={13} /> View details
-                    </button>
-                    <button
-                      onClick={() => navigate(`/hiring/${job.id}`)}
-                      style={{
-                        flex: 1,
-                        height: 38,
-                        borderRadius: 8,
-                        border: 'none',
-                        background: '#4F46E5',
-                        color: '#FFF',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 6
-                      }}
-                    >
-                      <Users size={13} /> View applicants
                     </button>
                   </div>
                 </div>

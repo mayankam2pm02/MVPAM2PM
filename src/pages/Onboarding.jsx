@@ -1,16 +1,14 @@
 import { useState, useEffect } from 'react'
 import {
   fetchEmployees,
-  fetchTrainingModules,
-  fetchTrainingProgress,
   fetchOnboardingProgress,
   upsertOnboardingProgress
 } from '../lib/supabase.js'
 import { sendWhatsAppMessage } from '../lib/twilio.js'
 import {
-  ClipboardList, CheckCircle2, AlertCircle, Clock,
-  Users, CheckSquare, Award, Search, Filter,
-  FileText, ShieldAlert, Cpu, Heart, MessageCircle, ChevronDown, Check
+  ClipboardList, Clock,
+  Users, CheckSquare, Award, Search,
+  MessageCircle
 } from 'lucide-react'
 
 const ONBOARDING_TASKS = [
@@ -26,8 +24,6 @@ const ONBOARDING_TASKS = [
 
 export default function Onboarding() {
   const [employees, setEmployees] = useState([])
-  const [modules, setModules] = useState([])
-  const [trainingCompleted, setTrainingCompleted] = useState({})
   const [onboardingTasks, setOnboardingTasks] = useState({})
   const [selectedEmp, setSelectedEmp] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -36,28 +32,16 @@ export default function Onboarding() {
   const [msg, setMsg] = useState('')
 
   useEffect(() => {
-    Promise.all([fetchEmployees(), fetchTrainingModules()])
-      .then(async ([e, m]) => {
+    fetchEmployees()
+      .then(async (e) => {
         setEmployees(e || [])
-        setModules(m || [])
 
         if (e && e.length > 0) {
-          // 1. Fetch training progress map
-          const tProgress = await Promise.all(e.map(emp => fetchTrainingProgress(emp.id)))
-          const tMap = {}
-          e.forEach((emp, i) => {
-            const list = tProgress[i] || []
-            const doneMap = {}
-            list.forEach(p => { doneMap[p.module_id] = true })
-            tMap[emp.id] = doneMap
-          })
-          setTrainingCompleted(tMap)
-
-          // 2. Fetch onboarding checklist map
+          // Fetch onboarding checklist map
           const oProgress = await Promise.all(e.map(emp => fetchOnboardingProgress(emp.id)))
           const oMap = {}
           e.forEach((emp, i) => {
-            oMap[emp.id] = oProgress[i]
+            oMap[emp.id] = oProgress[i] || {}
           })
           setOnboardingTasks(oMap)
 
@@ -74,40 +58,47 @@ export default function Onboarding() {
     setMsg('')
   }
 
-  // Get active courses list for selected employee
-  function getModsForEmp(emp) {
-    if (!emp) return []
-    const tag = emp.training_type || 'all'
-    return modules.filter(m => {
-      if (!m.profile_tags || m.profile_tags.length === 0) return true
-      if (m.profile_tags.includes('all')) return true
-      return m.profile_tags.includes(tag)
-    })
+  // Single source of truth for employee onboarding progress
+  function getEmpProgress(empId) {
+    if (!empId) return { completedCount: 0, total: ONBOARDING_TASKS.length, pct: 0, isDone: false }
+    const status = onboardingTasks[empId] || {}
+    const completedCount = ONBOARDING_TASKS.filter(t => status[t.key]).length
+    const total = ONBOARDING_TASKS.length
+    const pct = total ? Math.round((completedCount / total) * 100) : 0
+    return { completedCount, total, pct, isDone: completedCount === total }
   }
 
   // Calculate metrics for selected employee
   const empTasksStatus = onboardingTasks[selectedEmp?.id] || {}
-  const checklistCount = ONBOARDING_TASKS.filter(t => empTasksStatus[t.key]).length
-  const empMods = getModsForEmp(selectedEmp)
-  const doneMods = trainingCompleted[selectedEmp?.id] || {}
-  const trainingCount = empMods.length ? empMods.filter(m => doneMods[m.id]).length : 0
+  const { completedCount: checklistCount, total: totalPossible, pct: currentProgress } = getEmpProgress(selectedEmp?.id)
 
-  const totalPossible = ONBOARDING_TASKS.length
-  const totalCompleted = checklistCount
-  const currentProgress = totalPossible ? Math.round((totalCompleted / totalPossible) * 100) : 0
-
-  // Checklist handler
+  // Checklist handler with optimistic update
   async function toggleTask(taskKey) {
     if (!selectedEmp) return
     const currentStatus = !!empTasksStatus[taskKey]
-    const updatedRecord = { [taskKey]: !currentStatus }
+    const updatedStatus = !currentStatus
+    const updatedTasks = {
+      ...(empTasksStatus || {}),
+      [taskKey]: updatedStatus
+    }
+
+    // Optimistic UI update
+    setOnboardingTasks(prev => ({
+      ...prev,
+      [selectedEmp.id]: updatedTasks
+    }))
 
     try {
-      const result = await upsertOnboardingProgress(selectedEmp.id, updatedRecord)
-      setOnboardingTasks(prev => ({
-        ...prev,
-        [selectedEmp.id]: result
-      }))
+      const result = await upsertOnboardingProgress(selectedEmp.id, updatedTasks)
+      if (result) {
+        setOnboardingTasks(prev => ({
+          ...prev,
+          [selectedEmp.id]: {
+            ...(prev[selectedEmp.id] || {}),
+            ...result
+          }
+        }))
+      }
     } catch (e) {
       console.error(e)
     }
@@ -151,26 +142,11 @@ HR Team`
 
   // General statistics helper
   const totalEmployees = employees.length
-  const completedCount = employees.filter(emp => {
-    const status = onboardingTasks[emp.id] || {}
-    const cCount = ONBOARDING_TASKS.filter(t => status[t.key]).length
-    const mods = getModsForEmp(emp)
-    const dMods = trainingCompleted[emp.id] || {}
-    const tCompleted = mods.length ? mods.every(m => dMods[m.id]) : true
-    return cCount === ONBOARDING_TASKS.length && tCompleted
-  }).length
-
+  const completedCount = employees.filter(emp => getEmpProgress(emp.id).isDone).length
   const inProgressCount = totalEmployees - completedCount
 
   const progressSum = employees.reduce((sum, emp) => {
-    const status = onboardingTasks[emp.id] || {}
-    const cCount = ONBOARDING_TASKS.filter(t => status[t.key]).length
-    const mods = getModsForEmp(emp)
-    const dMods = trainingCompleted[emp.id] || {}
-    const tCompleted = mods.length && mods.every(m => dMods[m.id]) ? 1 : 0
-    const possible = ONBOARDING_TASKS.length + (mods.length ? 1 : 0)
-    const completed = cCount + (mods.length ? tCompleted : 0)
-    return sum + (possible ? Math.round((completed / possible) * 100) : 0)
+    return sum + getEmpProgress(emp.id).pct
   }, 0)
 
   const avgProgress = totalEmployees ? Math.round(progressSum / totalEmployees) : 0
@@ -186,12 +162,7 @@ HR Team`
     const matchesSearch = emp.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       emp.job_title?.toLowerCase().includes(searchTerm.toLowerCase())
 
-    const status = onboardingTasks[emp.id] || {}
-    const cCount = ONBOARDING_TASKS.filter(t => status[t.key]).length
-    const mods = getModsForEmp(emp)
-    const dMods = trainingCompleted[emp.id] || {}
-    const tCompleted = mods.length ? mods.every(m => dMods[m.id]) : true
-    const isDone = cCount === ONBOARDING_TASKS.length && tCompleted
+    const isDone = getEmpProgress(emp.id).isDone
 
     if (activeTab === 'in_progress') return matchesSearch && !isDone
     if (activeTab === 'completed') return matchesSearch && isDone
@@ -274,14 +245,7 @@ HR Team`
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '60vh', overflowY: 'auto' }}>
             {filteredEmployees.map(emp => {
               const isSelected = selectedEmp?.id === emp.id
-              const status = onboardingTasks[emp.id] || {}
-              const cCount = ONBOARDING_TASKS.filter(t => status[t.key]).length
-              const mods = getModsForEmp(emp)
-              const dMods = trainingCompleted[emp.id] || {}
-              const tCompleted = mods.length && mods.every(m => dMods[m.id]) ? 1 : 0
-              const possible = ONBOARDING_TASKS.length + (mods.length ? 1 : 0)
-              const completed = cCount + (mods.length ? tCompleted : 0)
-              const pct = possible ? Math.round((completed / possible) * 100) : 0
+              const { pct } = getEmpProgress(emp.id)
 
               return (
                 <div
