@@ -253,7 +253,7 @@ export default function CompanySwitcherHeader() {
                                 <span style={{ fontSize: 13, fontWeight: 600, color: isSelected ? '#312E81' : '#1E293B' }}>
                                   {comp.name}
                                 </span>
-                                {comp.status === 'locked' && (
+                                {(comp.status === 'locked' || comp.status === 'suspended') && (
                                   <span style={{
                                     fontSize: 9,
                                     background: '#FEE2E2',

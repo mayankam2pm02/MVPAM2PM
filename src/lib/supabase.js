@@ -571,11 +571,16 @@ export async function createCompany({ name, admin_name, admin_email, admin_passw
 }
 
 export async function updateCompanyStatus(companyId, status) {
+  // Normalize status for database compatibility:
+  // Supabase check constraint accepts 'active' and 'suspended'
+  const isLockRequest = status === 'locked' || status === 'suspended'
+  const dbStatus = isLockRequest ? 'suspended' : 'active'
+
   // 1. Update mock DB
   const companies = getMockDB('companies', MOCK_COMPANIES_DEFAULT)
   const idx = companies.findIndex(c => c.id === companyId)
   if (idx !== -1) {
-    companies[idx] = { ...companies[idx], status, updated_at: new Date().toISOString() }
+    companies[idx] = { ...companies[idx], status: dbStatus, updated_at: new Date().toISOString() }
     saveMockDB('companies', companies)
   }
 
@@ -584,12 +589,15 @@ export async function updateCompanyStatus(companyId, status) {
     try {
       const { data, error } = await supabase
         .from('companies')
-        .update({ status, updated_at: new Date().toISOString() })
+        .update({ status: dbStatus, updated_at: new Date().toISOString() })
         .eq('id', companyId)
         .select()
-        .single()
-      if (error) throw error
-      return data
+        .maybeSingle()
+      if (error) {
+        console.warn('Error updating company status in Supabase:', error.message)
+      } else if (data) {
+        return data
+      }
     } catch (err) {
       console.warn('Error updating company status in Supabase:', err)
     }

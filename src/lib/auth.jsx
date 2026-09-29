@@ -213,7 +213,10 @@ export function AuthProvider({ children }) {
   }, [loadCompanies])
 
   const toggleCompanyLock = useCallback(async (companyId, newStatus) => {
-    await updateCompanyStatus(companyId, newStatus)
+    const canonicalStatus = (newStatus === 'locked' || newStatus === 'suspended') ? 'suspended' : 'active'
+    // Optimistically update React state immediately
+    setCompanies(prev => prev.map(c => c.id === companyId ? { ...c, status: canonicalStatus } : c))
+    await updateCompanyStatus(companyId, canonicalStatus)
     await loadCompanies()
   }, [loadCompanies])
 

@@ -19,6 +19,11 @@ CREATE TABLE IF NOT EXISTS companies (
   updated_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Ensure companies status constraint accepts active, suspended, and locked
+ALTER TABLE companies DROP CONSTRAINT IF EXISTS companies_status_check;
+ALTER TABLE companies ADD CONSTRAINT companies_status_check 
+  CHECK (status IN ('active', 'suspended', 'locked'));
+
 -- 3. UPDATE PROFILES FOR MULTI-TENANCY & SUPERADMIN
 ALTER TABLE profiles 
   ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE SET NULL;

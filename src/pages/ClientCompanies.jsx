@@ -6,7 +6,7 @@ import AddCompanyModal from '../components/companies/AddCompanyModal.jsx'
 import {
   Building2, Users, Briefcase, Plus, ArrowRight,
   Eye, Shield, Search, ChevronRight, UserCheck, Calendar,
-  Lock, Unlock
+  Lock, Unlock, Loader2
 } from 'lucide-react'
 
 export default function ClientCompanies() {
@@ -19,6 +19,30 @@ export default function ClientCompanies() {
   const [loading, setLoading] = useState(true)
   const [expandedCompanyId, setExpandedCompanyId] = useState(null)
   const [companyEmployees, setCompanyEmployees] = useState({})
+  const [lockingId, setLockingId] = useState(null)
+  const [feedback, setFeedback] = useState(null)
+
+  const handleToggleLock = async (comp) => {
+    const isCurrentlyLocked = comp.status === 'locked' || comp.status === 'suspended'
+    const newStatus = isCurrentlyLocked ? 'active' : 'suspended'
+    setLockingId(comp.id)
+    try {
+      await toggleCompanyLock(comp.id, newStatus)
+      setFeedback({
+        type: 'success',
+        msg: `Workspace for "${comp.name}" is now ${isCurrentlyLocked ? 'Unlocked (Logins Allowed)' : 'Locked (All Logins Blocked)'}.`
+      })
+      setTimeout(() => setFeedback(null), 4000)
+    } catch (err) {
+      console.error('Failed to toggle lock status:', err)
+      setFeedback({
+        type: 'error',
+        msg: `Failed to update lock status: ${err.message || 'Please try again.'}`
+      })
+    } finally {
+      setLockingId(null)
+    }
+  }
 
   useEffect(() => {
     async function loadStats() {
@@ -240,6 +264,33 @@ export default function ClientCompanies() {
         </div>
       </div>
 
+      {/* Feedback Alert Banner */}
+      {feedback && (
+        <div style={{
+          padding: '12px 18px',
+          borderRadius: 10,
+          marginBottom: 16,
+          fontSize: 13,
+          fontWeight: 600,
+          background: feedback.type === 'error' ? '#FEF2F2' : '#ECFDF5',
+          color: feedback.type === 'error' ? '#B91C1C' : '#047857',
+          border: feedback.type === 'error' ? '1px solid #FECACA' : '1px solid #A7F3D0',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          boxShadow: '0 2px 6px rgba(0,0,0,0.02)'
+        }}>
+          <span>{feedback.msg}</span>
+          <button 
+            type="button"
+            onClick={() => setFeedback(null)} 
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: 'inherit', padding: 4 }}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Search & Filter Bar */}
       <div style={{
         display: 'flex',
@@ -279,6 +330,7 @@ export default function ClientCompanies() {
           const stats = companyStats[comp.id] || { employeesCount: 0, jobsCount: 0, candidatesCount: 0 }
           const emps = companyEmployees[comp.id] || []
           const isExpanded = expandedCompanyId === comp.id
+          const isLocked = comp.status === 'locked' || comp.status === 'suspended'
 
           return (
             <div
@@ -325,8 +377,8 @@ export default function ClientCompanies() {
                       </h3>
                       <span style={{
                         fontSize: 11,
-                        background: comp.status === 'locked' ? '#FEE2E2' : '#DCFCE7',
-                        color: comp.status === 'locked' ? '#B91C1C' : '#15803D',
+                        background: isLocked ? '#FEE2E2' : '#DCFCE7',
+                        color: isLocked ? '#B91C1C' : '#15803D',
                         padding: '2px 8px',
                         borderRadius: 999,
                         fontWeight: 600,
@@ -334,8 +386,8 @@ export default function ClientCompanies() {
                         alignItems: 'center',
                         gap: 4
                       }}>
-                        {comp.status === 'locked' ? <Lock size={11} /> : null}
-                        {comp.status === 'locked' ? 'Locked (Logins Disabled)' : 'Active'}
+                        {isLocked ? <Lock size={11} /> : null}
+                        {isLocked ? 'Locked (Logins Disabled)' : 'Active'}
                       </span>
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>
@@ -373,25 +425,33 @@ export default function ClientCompanies() {
                   {/* Lock / Unlock Toggle Button */}
                   <button
                     type="button"
-                    onClick={() => toggleCompanyLock(comp.id, comp.status === 'locked' ? 'active' : 'locked')}
+                    disabled={lockingId === comp.id}
+                    onClick={() => handleToggleLock(comp)}
                     style={{
-                      background: comp.status === 'locked' ? '#FEF2F2' : '#F8FAFC',
-                      border: comp.status === 'locked' ? '1px solid #FCA5A5' : '1px solid #CBD5E1',
-                      color: comp.status === 'locked' ? '#DC2626' : '#475569',
+                      background: isLocked ? '#FEF2F2' : '#F8FAFC',
+                      border: isLocked ? '1px solid #FCA5A5' : '1px solid #CBD5E1',
+                      color: isLocked ? '#DC2626' : '#475569',
                       padding: '7px 12px',
                       borderRadius: 8,
                       fontSize: 12,
                       fontWeight: 600,
-                      cursor: 'pointer',
+                      cursor: lockingId === comp.id ? 'not-allowed' : 'pointer',
+                      opacity: lockingId === comp.id ? 0.7 : 1,
                       display: 'flex',
                       alignItems: 'center',
                       gap: 6,
                       transition: 'all 0.15s ease'
                     }}
-                    title={comp.status === 'locked' ? 'Click to Unlock this company (Allow logins)' : 'Click to Lock this company (Block all logins)'}
+                    title={isLocked ? 'Click to Unlock this company (Allow logins)' : 'Click to Lock this company (Block all logins)'}
                   >
-                    {comp.status === 'locked' ? <Unlock size={14} color="#DC2626" /> : <Lock size={14} color="#64748B" />}
-                    <span>{comp.status === 'locked' ? 'Unlock' : 'Lock'}</span>
+                    {lockingId === comp.id ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : isLocked ? (
+                      <Unlock size={14} color="#DC2626" />
+                    ) : (
+                      <Lock size={14} color="#64748B" />
+                    )}
+                    <span>{lockingId === comp.id ? 'Updating...' : isLocked ? 'Unlock' : 'Lock'}</span>
                   </button>
 
                   <button
