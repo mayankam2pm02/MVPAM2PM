@@ -66,7 +66,8 @@ export default function NewJob() {
         qualifying_questions: questions.filter(q => q.question.trim()),
         status: 'active',
         posted_by: user.supabaseId,
-      })
+        company_id: user.company_id || null,
+      }, user.company_id)
       navigate('/hiring')
     } catch (e) {
       setError(e.message)

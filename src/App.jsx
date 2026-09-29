@@ -16,6 +16,7 @@ import Reports from './pages/Reports.jsx'
 import Settings from './pages/Settings.jsx'
 import AIPrompts from './pages/AIPrompts.jsx'
 import JobPortals from './pages/JobPortals.jsx'
+import ClientCompanies from './pages/ClientCompanies.jsx'
 import ConsentPage from './pages/ConsentPage.jsx'
 import ApplyPage from './pages/ApplyPage.jsx'
 import OAuthLoginPage from './pages/OAuthLoginPage.jsx'
@@ -26,7 +27,7 @@ function ProtectedRoute({ children, moduleKey }) {
   const { user, loading } = useAuth()
   if (loading) return <LoadingScreen />
   if (!user) return <Navigate to="/login" replace />
-  if (moduleKey && !hasModulePermission(user.role, moduleKey)) return <Navigate to="/dashboard" replace />
+  if (moduleKey && !hasModulePermission(user, moduleKey)) return <Navigate to="/dashboard" replace />
   return <AppShell>{children}</AppShell>
 }
 
@@ -60,6 +61,7 @@ function AppRoutes() {
       <Route path="/portals"    element={<ProtectedRoute moduleKey="portals"><JobPortals /></ProtectedRoute>} />
       <Route path="/reports"    element={<ProtectedRoute moduleKey="reports"><Reports /></ProtectedRoute>} />
       <Route path="/prompts"    element={<ProtectedRoute moduleKey="prompts"><AIPrompts /></ProtectedRoute>} />
+      <Route path="/companies"  element={<ProtectedRoute moduleKey="companies"><ClientCompanies /></ProtectedRoute>} />
       <Route path="/settings"   element={<ProtectedRoute moduleKey="settings"><Settings /></ProtectedRoute>} />
 
       {/* Fallback */}

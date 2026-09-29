@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useAuth } from '../lib/auth.jsx'
 import { fetchCandidates, createCandidate, fetchJobs, fetchAllApplications } from '../lib/supabase.js'
 import { screenResume } from '../lib/claude.js'
 import { extractText, nameFromFile } from '../lib/fileExtract.js'
@@ -286,6 +287,7 @@ const STATUS_ORDER = ['hired','offer_sent','interview_done','interview_scheduled
 
 // ─── Main Page ────────────────────────────────────────────────
 export default function Candidates() {
+  const { user } = useAuth()
   const [candidates, setCandidates] = useState([])
   const [appMap, setAppMap]         = useState({})
   const [jobs, setJobs]             = useState([])
@@ -309,7 +311,12 @@ export default function Candidates() {
   const [matchError, setMatchError]     = useState('')
 
   useEffect(() => {
-    Promise.all([fetchCandidates(), fetchAllApplications(), fetchJobs()])
+    setLoading(true)
+    Promise.all([
+      fetchCandidates(user?.company_id),
+      fetchAllApplications(user?.company_id),
+      fetchJobs(user?.company_id)
+    ])
       .then(([cands, apps, jobList]) => {
         setCandidates(cands || [])
         setJobs(jobList || [])
@@ -323,7 +330,7 @@ export default function Candidates() {
       })
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [])
+  }, [user?.company_id])
 
   async function runMatch() {
     const job = jobs.find(j => j.id === matchJobId)

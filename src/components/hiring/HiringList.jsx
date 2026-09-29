@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../lib/auth.jsx'
 import { fetchJobs, fetchAllApplications } from '../../lib/supabase.js'
 import NotificationBell from '../layout/NotificationBell.jsx'
+import { hasModulePermission, hasActionPermission } from '../../lib/permissions.js'
 import {
   Plus, Search, Briefcase, Users, BarChart3, Clock,
   ChevronDown, MapPin, Calendar, DollarSign,
@@ -39,14 +40,15 @@ export default function HiringList() {
   const [sortBy, setSortBy]               = useState('latest')
 
   useEffect(() => {
-    Promise.all([fetchJobs(), fetchAllApplications()])
+    setLoading(true)
+    Promise.all([fetchJobs(user?.company_id), fetchAllApplications(user?.company_id)])
       .then(([j, a]) => {
         setJobs(j || [])
         setApplications(a || [])
       })
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [])
+  }, [user?.company_id])
 
   // Check if database is completely empty (seed fallback)
   const isEmptyDB = jobs.length === 0
@@ -166,7 +168,7 @@ export default function HiringList() {
           </div>
 
           {/* Post New Job Button */}
-          {['hr','admin','manager'].includes(user?.role) && (
+          {hasActionPermission(user, 'hiring', 'create') && (
             <button
               onClick={() => navigate('/hiring/new')}
               style={{
@@ -689,33 +691,35 @@ export default function HiringList() {
           </div>
         </div>
 
-        <button
-          onClick={() => navigate('/reports')}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '10px 20px',
-            borderRadius: 10,
-            background: '#FFF',
-            color: '#4F46E5',
-            border: '1px solid var(--border)',
-            fontWeight: 600,
-            fontSize: 13,
-            cursor: 'pointer',
-            transition: 'all 0.15s'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = '#4F46E5'
-            e.currentTarget.style.background = '#F5F3FF'
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = 'var(--border)'
-            e.currentTarget.style.background = '#FFF'
-          }}
-        >
-          View pipeline analytics <ChevronRight size={14} />
-        </button>
+        {hasModulePermission(user, 'reports') && (
+          <button
+            onClick={() => navigate('/reports')}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '10px 20px',
+              borderRadius: 10,
+              background: '#FFF',
+              color: '#4F46E5',
+              border: '1px solid var(--border)',
+              fontWeight: 600,
+              fontSize: 13,
+              cursor: 'pointer',
+              transition: 'all 0.15s'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = '#4F46E5'
+              e.currentTarget.style.background = '#F5F3FF'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = 'var(--border)'
+              e.currentTarget.style.background = '#FFF'
+            }}
+          >
+            View pipeline analytics <ChevronRight size={14} />
+          </button>
+        )}
       </div>
 
     </div>

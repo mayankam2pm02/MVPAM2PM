@@ -4,7 +4,8 @@ import { LogIn, Eye, EyeOff, Star, ArrowLeft, ArrowRight } from 'lucide-react'
 import { isConfigured } from '../lib/supabase.js'
 
 const DEMO_USERS = [
-  { label: 'Admin (CEO)',  email: 'priya@acme.com',  password: 'admin123' },
+  { label: '👑 Super Admin', email: 'mayank@am2pmsupport.com', password: 'admin123' },
+  { label: 'Acme Admin (CEO)', email: 'priya@acme.com',  password: 'admin123' },
   { label: 'HR Manager',  email: 'rahul@acme.com',  password: 'hr123456' },
   { label: 'Manager',     email: 'anita@acme.com',  password: 'mgr12345' },
   { label: 'Interviewer', email: 'karan@acme.com',  password: 'int12345' },

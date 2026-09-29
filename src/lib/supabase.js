@@ -190,17 +190,84 @@ const MOCK_TASKS_DEFAULT = [
   { id: 'task-2', title: 'Update CRM with call dispositions', frequency: 'daily', priority: 'medium', profile_tags: ['sales', 'bd'], created_at: new Date().toISOString() }
 ]
 
+const MOCK_COMPANIES_DEFAULT = [
+  {
+    id: 'a0000000-0000-0000-0000-000000000001',
+    name: 'Acme Corporation',
+    slug: 'acme',
+    admin_name: 'Priya Sharma',
+    admin_email: 'priya@acme.com',
+    status: 'active',
+    created_at: new Date(Date.now() - 3600000 * 24 * 30).toISOString()
+  },
+  {
+    id: 'a0000000-0000-0000-0000-000000000002',
+    name: 'TechCorp Solutions',
+    slug: 'techcorp',
+    admin_name: 'Rahul Verma',
+    admin_email: 'rahul@techcorp.com',
+    status: 'active',
+    created_at: new Date(Date.now() - 3600000 * 24 * 14).toISOString()
+  }
+]
+
 // ─── AUTH HELPERS ─────────────────────────────────────────────
 
 export async function signIn(email, password) {
+  const normEmail = (email || '').trim().toLowerCase()
   if (!isConfigured) {
-    const role = email.includes('priya') ? 'admin' : email.includes('rahul') ? 'hr' : email.includes('anita') ? 'manager' : 'interviewer'
-    const name = email.includes('priya') ? 'Priya Sharma' : email.includes('rahul') ? 'Rahul Verma' : email.includes('anita') ? 'Anita Desai' : 'Karan Singh'
+    const customUsers = getMockDB('mock_registered_users', {})
+    const matched = customUsers[normEmail]
+    
+    let role = 'interviewer'
+    let name = 'User'
+    let companyId = null
+    let companyName = null
+
+    if (normEmail === 'mayank@am2pmsupport.com' || normEmail.includes('mayank') || normEmail.includes('superadmin')) {
+      role = 'superadmin'
+      name = 'Mayank (Super Admin)'
+    } else if (matched) {
+      role = matched.role || 'admin'
+      name = matched.name || 'Client Admin'
+      companyId = matched.company_id || null
+      companyName = matched.company_name || null
+    } else if (normEmail.includes('priya')) {
+      role = 'admin'
+      name = 'Priya Sharma'
+      companyId = 'a0000000-0000-0000-0000-000000000001'
+      companyName = 'Acme Corporation'
+    } else if (normEmail.includes('rahul')) {
+      role = 'hr'
+      name = 'Rahul Verma'
+      companyId = 'a0000000-0000-0000-0000-000000000001'
+      companyName = 'Acme Corporation'
+    } else if (normEmail.includes('anita')) {
+      role = 'manager'
+      name = 'Anita Desai'
+      companyId = 'a0000000-0000-0000-0000-000000000001'
+      companyName = 'Acme Corporation'
+    } else {
+      role = 'interviewer'
+      name = 'Karan Singh'
+    }
+
+    if (role !== 'superadmin' && companyId) {
+      const companies = getMockDB('companies', MOCK_COMPANIES_DEFAULT)
+      const comp = companies.find(c => c.id === companyId)
+      if (comp && (comp.status === 'locked' || comp.status === 'suspended')) {
+        throw new Error(`Access Denied: The workspace for "${comp.name}" has been locked by the Super Administrator. Please contact support.`)
+      }
+    }
+
     const mockUser = {
-      id: 'mock-uuid-' + role,
+      id: matched?.id || ('mock-uuid-' + role),
       email: email,
       role: role,
       name: name,
+      title: role === 'superadmin' ? 'Super Administrator' : (role === 'admin' ? 'Client Administrator' : 'Team Member'),
+      company_id: companyId,
+      company_name: companyName,
       avatar: null
     }
     localStorage.setItem('mock_user', JSON.stringify(mockUser))
@@ -210,8 +277,35 @@ export async function signIn(email, password) {
       session: { user: { id: mockUser.id, email: mockUser.email } }
     }
   }
+
   const { data, error } = await supabase.auth.signInWithPassword({ email, password })
   if (error) throw error
+
+  // Ensure mayank is recognized as superadmin in Supabase
+  if (normEmail === 'mayank@am2pmsupport.com' && data?.user?.id) {
+    try {
+      await supabase.from('profiles').update({ role: 'superadmin' }).eq('id', data.user.id)
+    } catch (e) {
+      console.warn('Could not auto-update superadmin role in profiles:', e)
+    }
+  } else if (data?.user?.id) {
+    // Check if user's company is locked
+    try {
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('*, companies(id, name, status)')
+        .eq('id', data.user.id)
+        .maybeSingle()
+      if (prof?.companies && (prof.companies.status === 'locked' || prof.companies.status === 'suspended')) {
+        await supabase.auth.signOut()
+        throw new Error(`Access Denied: The workspace for "${prof.companies.name}" has been locked by the Super Administrator. Please contact support.`)
+      }
+    } catch (checkErr) {
+      if (checkErr.message?.includes('Access Denied')) throw checkErr
+      console.warn('Could not check company lock status:', checkErr)
+    }
+  }
+
   return data
 }
 
@@ -266,30 +360,65 @@ export async function getProfile(userId) {
     if (mockUser && mockUser.id === userId) return mockUser
     return {
       id: userId,
-      name: 'Demo User',
-      role: 'admin',
+      name: 'Mayank (Super Admin)',
+      email: 'mayank@am2pmsupport.com',
+      role: 'superadmin',
+      title: 'Super Administrator',
       avatar: null
     }
   }
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .maybeSingle()
+
+  let profileData = null
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*, companies(id, name, logo_url)')
+      .eq('id', userId)
+      .maybeSingle()
+    if (!error && data) {
+      profileData = {
+        ...data,
+        company_name: data.companies?.name || null
+      }
+    }
+  } catch (err) {
+    console.warn('Could not query profiles with companies join:', err)
+  }
+
+  if (!profileData) {
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle()
+      profileData = data
+    } catch (e) {
+      console.warn('Could not query profiles basic:', e)
+    }
+  }
   
-  if (data) return data
+  if (profileData) {
+    if (profileData.email?.toLowerCase() === 'mayank@am2pmsupport.com') {
+      profileData.role = 'superadmin'
+      profileData.title = 'Super Administrator'
+    }
+    return profileData
+  }
 
   // If profile row doesn't exist yet, auto-generate from session user metadata
   try {
     const { data: sessionData } = await supabase.auth.getSession()
     const authUser = sessionData?.session?.user
     if (authUser && authUser.id === userId) {
+      const isSuper = authUser.email?.toLowerCase() === 'mayank@am2pmsupport.com'
       const fallback = {
         id: userId,
         name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'User',
         email: authUser.email,
-        role: authUser.user_metadata?.role || 'employee',
-        title: authUser.user_metadata?.title || 'Team Member'
+        role: isSuper ? 'superadmin' : (authUser.user_metadata?.role || 'employee'),
+        title: isSuper ? 'Super Administrator' : (authUser.user_metadata?.title || 'Team Member'),
+        company_id: authUser.user_metadata?.company_id || null
       }
       const { data: created } = await supabase
         .from('profiles')
@@ -344,25 +473,160 @@ export async function getCurrentSession() {
   return session
 }
 
+// ─── COMPANIES (MULTI-TENANCY) ────────────────────────────────
+
+export async function fetchCompanies() {
+  if (!isConfigured) {
+    return getMockDB('companies', MOCK_COMPANIES_DEFAULT)
+  }
+  try {
+    const { data, error } = await supabase
+      .from('companies')
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (error) {
+      console.warn('Could not fetch companies from Supabase, using mock fallback:', error.message)
+      return getMockDB('companies', MOCK_COMPANIES_DEFAULT)
+    }
+    return data && data.length > 0 ? data : getMockDB('companies', MOCK_COMPANIES_DEFAULT)
+  } catch (err) {
+    console.warn('Error fetching companies:', err)
+    return getMockDB('companies', MOCK_COMPANIES_DEFAULT)
+  }
+}
+
+export async function createCompany({ name, admin_name, admin_email, admin_password }) {
+  const newCompanyId = 'comp-' + Date.now()
+  const slug = (name || 'company').toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-')
+  const companyRecord = {
+    id: newCompanyId,
+    name,
+    slug,
+    admin_name: admin_name || (name + ' Admin'),
+    admin_email,
+    status: 'active',
+    created_at: new Date().toISOString()
+  }
+
+  // 1. Always keep local mock DB updated immediately
+  const companies = getMockDB('companies', MOCK_COMPANIES_DEFAULT)
+  companies.unshift(companyRecord)
+  saveMockDB('companies', companies)
+
+  // 2. Register mock user for this admin so they can login immediately
+  const mockUsers = getMockDB('mock_registered_users', {})
+  mockUsers[admin_email.toLowerCase()] = {
+    id: 'admin-' + Date.now(),
+    email: admin_email,
+    name: admin_name,
+    role: 'admin',
+    title: 'Client Administrator',
+    company_id: newCompanyId,
+    company_name: name,
+    password: admin_password
+  }
+  saveMockDB('mock_registered_users', mockUsers)
+
+  // 3. Supabase integration if configured
+  if (isConfigured) {
+    try {
+      const { data: compData, error: compErr } = await supabase
+        .from('companies')
+        .insert({
+          name,
+          slug,
+          admin_name,
+          admin_email,
+          status: 'active'
+        })
+        .select()
+        .single()
+
+      if (!compErr && compData) {
+        // Also sign up in Supabase auth if possible
+        try {
+          await supabase.auth.signUp({
+            email: admin_email,
+            password: admin_password,
+            options: {
+              data: {
+                name: admin_name,
+                role: 'admin',
+                title: 'Client Administrator',
+                company_id: compData.id
+              }
+            }
+          })
+        } catch (e) {
+          console.warn('Supabase auth signup attempt:', e.message)
+        }
+        return compData
+      }
+    } catch (err) {
+      console.warn('Supabase createCompany error, falling back to local:', err)
+    }
+  }
+
+  return companyRecord
+}
+
+export async function updateCompanyStatus(companyId, status) {
+  // 1. Update mock DB
+  const companies = getMockDB('companies', MOCK_COMPANIES_DEFAULT)
+  const idx = companies.findIndex(c => c.id === companyId)
+  if (idx !== -1) {
+    companies[idx] = { ...companies[idx], status, updated_at: new Date().toISOString() }
+    saveMockDB('companies', companies)
+  }
+
+  // 2. Update Supabase if configured
+  if (isConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from('companies')
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq('id', companyId)
+        .select()
+        .single()
+      if (error) throw error
+      return data
+    } catch (err) {
+      console.warn('Error updating company status in Supabase:', err)
+    }
+  }
+
+  return idx !== -1 ? companies[idx] : null
+}
+
 // ─── JOBS ─────────────────────────────────────────────────────
 
-export async function fetchJobs() {
+export async function fetchJobs(companyId = null) {
   if (!isConfigured) {
-    return getMockDB('jobs', MOCK_JOBS_DEFAULT)
+    const jobs = getMockDB('jobs', MOCK_JOBS_DEFAULT)
+    if (!companyId) return jobs
+    return jobs.filter(j => !j.company_id || j.company_id === companyId)
   }
-  const { data, error } = await supabase
+  let query = supabase
     .from('jobs')
     .select('*, profiles(name, avatar)')
     .order('created_at', { ascending: false })
+  
+  if (companyId) {
+    query = query.eq('company_id', companyId)
+  }
+  const { data, error } = await query
   if (error) throw error
   return data
 }
 
-export async function createJob(job) {
+export async function createJob(job, companyId = null) {
+  const finalJob = { ...job }
+  if (companyId && !finalJob.company_id) finalJob.company_id = companyId
+
   if (!isConfigured) {
     const jobs = getMockDB('jobs', MOCK_JOBS_DEFAULT)
     const newJob = {
-      ...job,
+      ...finalJob,
       id: 'job-' + Date.now(),
       created_at: new Date().toISOString()
     }
@@ -372,7 +636,7 @@ export async function createJob(job) {
   }
   const { data, error } = await supabase
     .from('jobs')
-    .insert(job)
+    .insert(finalJob)
     .select()
     .single()
   if (error) throw error
@@ -435,35 +699,47 @@ export async function resetApplicationScreening(jobId) {
   if (error) throw error
 }
 
-export async function fetchAllApplications() {
+export async function fetchAllApplications(companyId = null) {
   if (!isConfigured) {
     const apps = getMockDB('applications', MOCK_APPLICATIONS_DEFAULT)
     const candidates = getMockDB('candidates', MOCK_CANDIDATES_DEFAULT)
     const jobs = getMockDB('jobs', MOCK_JOBS_DEFAULT)
-    return apps.map(a => ({
+    const mapped = apps.map(a => ({
       ...a,
       candidates: candidates.find(c => c.id === a.candidate_id) || null,
       jobs: jobs.find(j => j.id === a.job_id) || null
     }))
+    if (!companyId) return mapped
+    return mapped.filter(a => !a.company_id || a.company_id === companyId || (a.jobs && a.jobs.company_id === companyId))
   }
-  const { data, error } = await supabase
+  let query = supabase
     .from('applications')
-    .select('*, candidates(name, email, phone, role, location), jobs(id, title, department, location)')
+    .select('*, candidates(name, email, phone, role, location), jobs(id, title, department, location, company_id)')
     .order('applied_at', { ascending: false })
+  
+  if (companyId) {
+    query = query.eq('company_id', companyId)
+  }
+  const { data, error } = await query
   if (error) throw error
   return data
 }
 
-export async function fetchInterviewApplications() {
+export async function fetchInterviewApplications(companyId = null) {
   if (!isConfigured) {
-    const apps = await fetchAllApplications()
+    const apps = await fetchAllApplications(companyId)
     return apps.filter(a => ['video_interview', 'manual_round'].includes(a.status))
   }
-  const { data, error } = await supabase
+  let query = supabase
     .from('applications')
-    .select('*, candidates(*), jobs(id, title, department, location)')
+    .select('*, candidates(*), jobs(id, title, department, location, company_id)')
     .in('status', ['video_interview', 'manual_round'])
     .order('updated_at', { ascending: false })
+
+  if (companyId) {
+    query = query.eq('company_id', companyId)
+  }
+  const { data, error } = await query
   if (error) throw error
   return (data || []).map(app => {
     if (app.candidates) hydrateCandidate(app.candidates)
@@ -473,24 +749,33 @@ export async function fetchInterviewApplications() {
 
 // ─── CANDIDATES ───────────────────────────────────────────────
 
-export async function fetchCandidates() {
+export async function fetchCandidates(companyId = null) {
   if (!isConfigured) {
     const list = getMockDB('candidates', MOCK_CANDIDATES_DEFAULT)
-    return list.map(c => hydrateCandidate(c))
+    const filtered = companyId ? list.filter(c => !c.company_id || c.company_id === companyId) : list
+    return filtered.map(c => hydrateCandidate(c))
   }
-  const { data, error } = await supabase
+  let query = supabase
     .from('candidates')
     .select('*')
     .order('rating', { ascending: false })
+
+  if (companyId) {
+    query = query.eq('company_id', companyId)
+  }
+  const { data, error } = await query
   if (error) throw error
   return (data || []).map(c => hydrateCandidate(c))
 }
 
-export async function createCandidate(candidate) {
+export async function createCandidate(candidate, companyId = null) {
+  const finalCand = { ...candidate }
+  if (companyId && !finalCand.company_id) finalCand.company_id = companyId
+
   if (!isConfigured) {
     const candidates = getMockDB('candidates', MOCK_CANDIDATES_DEFAULT)
     const newCand = {
-      ...candidate,
+      ...finalCand,
       id: 'cand-' + Date.now(),
       created_at: new Date().toISOString()
     }
@@ -500,7 +785,7 @@ export async function createCandidate(candidate) {
   }
   const { data, error } = await supabase
     .from('candidates')
-    .insert(candidate)
+    .insert(finalCand)
     .select()
     .single()
   if (error) throw error
@@ -638,16 +923,24 @@ export async function fetchApplicationByToken(token) {
   return data
 }
 
-// ─── EMPLOYEES ────────────────────────────────────────────────
-
-export async function fetchEmployees() {
+export async function fetchEmployees(companyId = null) {
   if (!isConfigured) {
-    return getMockDB('employees', MOCK_EMPLOYEES_DEFAULT)
+    const emps = getMockDB('employees', MOCK_EMPLOYEES_DEFAULT)
+    const filtered = companyId ? emps.filter(e => !e.company_id || e.company_id === companyId) : emps
+    return filtered.map(emp => ({
+      ...emp,
+      phone: emp.phone || emp.candidates?.phone || ''
+    }))
   }
-  const { data, error } = await supabase
+  let query = supabase
     .from('employees')
     .select('*, candidates(phone)')
     .order('created_at', { ascending: false })
+
+  if (companyId) {
+    query = query.eq('company_id', companyId)
+  }
+  const { data, error } = await query
   if (error) throw error
   return (data || []).map(emp => ({
     ...emp,
@@ -655,11 +948,14 @@ export async function fetchEmployees() {
   }))
 }
 
-export async function createEmployee(employee) {
+export async function createEmployee(employee, companyId = null) {
+  const finalEmp = { ...employee }
+  if (companyId && !finalEmp.company_id) finalEmp.company_id = companyId
+
   if (!isConfigured) {
     const emps = getMockDB('employees', MOCK_EMPLOYEES_DEFAULT)
     const newEmp = {
-      ...employee,
+      ...finalEmp,
       id: 'emp-uuid-' + Date.now(),
       created_at: new Date().toISOString()
     }
@@ -669,7 +965,7 @@ export async function createEmployee(employee) {
   }
   const { data, error } = await supabase
     .from('employees')
-    .insert(employee)
+    .insert(finalEmp)
     .select()
     .single()
   if (error) throw error
@@ -946,14 +1242,20 @@ export async function createTask(task) {
   return data
 }
 
-export async function fetchLeads() {
+export async function fetchLeads(companyId = null) {
   if (!isConfigured) {
-    return getMockDB('crm_leads', MOCK_CRM_LEADS_DEFAULT)
+    const leads = getMockDB('crm_leads', MOCK_CRM_LEADS_DEFAULT)
+    if (!companyId) return leads
+    return leads.filter(l => !l.company_id || l.company_id === companyId)
   }
-  const { data, error } = await supabase
+  let query = supabase
     .from('crm_leads')
     .select('*')
     .order('created_at', { ascending: false })
+  if (companyId) {
+    query = query.eq('company_id', companyId)
+  }
+  const { data, error } = await query
   if (error) throw error
   return data
 }
@@ -1002,14 +1304,20 @@ export async function logCall(callLog) {
 
 // ─── TASKS ────────────────────────────────────────────────────
 
-export async function fetchTasks() {
+export async function fetchTasks(companyId = null) {
   if (!isConfigured) {
-    return getMockDB('tasks', MOCK_TASKS_DEFAULT)
+    const tasks = getMockDB('tasks', MOCK_TASKS_DEFAULT)
+    if (!companyId) return tasks
+    return tasks.filter(t => !t.company_id || t.company_id === companyId)
   }
-  const { data, error } = await supabase
+  let query = supabase
     .from('tasks')
     .select('*')
     .order('priority', { ascending: false })
+  if (companyId) {
+    query = query.eq('company_id', companyId)
+  }
+  const { data, error } = await query
   if (error) throw error
   return data
 }
@@ -1188,3 +1496,130 @@ export async function upsertOnboardingProgress(employeeId, record) {
     return allProgress[employeeId]
   }
 }
+
+// ─── ACCESS & SECURITY AUDIT LOGS ──────────────────────────────
+
+const DEFAULT_ACCESS_LOGS = [
+  {
+    id: 'log-1',
+    user_name: 'Mayank Jain',
+    user_email: 'mayank@am2pmsupport.com',
+    user_role: 'superadmin',
+    action: 'SESSION_LOGIN',
+    action_label: 'Super Admin Login',
+    details: 'Authenticated successfully into TalentOS platform via Supabase Auth',
+    ip_address: '103.21.244.18',
+    device: 'macOS · Chrome 128',
+    status: 'success',
+    created_at: new Date(Date.now() - 1000 * 60 * 12).toISOString()
+  },
+  {
+    id: 'log-2',
+    user_name: 'Priya Admin',
+    user_email: 'admin@acme.com',
+    user_role: 'admin',
+    action: 'ROLE_UPDATE',
+    action_label: 'Role Permissions Modified',
+    details: 'Configured module access for HR Manager role (Hiring & CRM)',
+    ip_address: '157.34.89.201',
+    device: 'macOS · Safari 17.5',
+    status: 'info',
+    created_at: new Date(Date.now() - 1000 * 60 * 42).toISOString()
+  },
+  {
+    id: 'log-3',
+    user_name: 'Sujay Dey',
+    user_email: 'sujaydey0023@gmail.com',
+    user_role: 'employee',
+    action: 'USER_INVITE',
+    action_label: 'New Account Created',
+    details: 'Registered team member account with Employee portal permissions',
+    ip_address: '49.37.112.94',
+    device: 'Windows · Chrome 127',
+    status: 'success',
+    created_at: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString()
+  },
+  {
+    id: 'log-4',
+    user_name: 'Rajat Gera',
+    user_email: 'info@anilfood.com',
+    user_role: 'interviewer',
+    action: 'SESSION_LOGIN',
+    action_label: 'Interviewer Login',
+    details: 'Logged into workspace session from authorized IP',
+    ip_address: '182.70.14.88',
+    device: 'iOS · Mobile Safari',
+    status: 'success',
+    created_at: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString()
+  },
+  {
+    id: 'log-5',
+    user_name: 'Security Guard',
+    user_email: 'system@talentos.ai',
+    user_role: 'system',
+    action: 'FAILED_AUTH_ATTEMPT',
+    action_label: 'Unauthorized Attempt Blocked',
+    details: 'Invalid credential sequence rejected by rate limiter',
+    ip_address: '45.148.10.12',
+    device: 'Linux · Unknown client',
+    status: 'warning',
+    created_at: new Date(Date.now() - 1000 * 60 * 60 * 8).toISOString()
+  },
+  {
+    id: 'log-6',
+    user_name: 'Priya Admin',
+    user_email: 'admin@acme.com',
+    user_role: 'admin',
+    action: 'STATUS_CHANGE',
+    action_label: 'Account Status Modified',
+    details: 'User account status toggled to Active',
+    ip_address: '157.34.89.201',
+    device: 'macOS · Chrome 128',
+    status: 'success',
+    created_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString()
+  }
+]
+
+export async function fetchAccessLogs(companyId = null) {
+  if (!isConfigured) {
+    return getMockDB('access_logs', DEFAULT_ACCESS_LOGS)
+  }
+  try {
+    let query = supabase.from('access_logs').select('*').order('created_at', { ascending: false })
+    if (companyId) {
+      query = query.eq('company_id', companyId)
+    }
+    const { data, error } = await query
+    if (error) throw error
+    if (!data || data.length === 0) {
+      return getMockDB('access_logs', DEFAULT_ACCESS_LOGS)
+    }
+    return data
+  } catch (err) {
+    console.warn('Failed to fetch from Supabase access_logs, returning fallback/local store:', err.message)
+    return getMockDB('access_logs', DEFAULT_ACCESS_LOGS)
+  }
+}
+
+export async function createAccessLog(log) {
+  const newLog = {
+    ...log,
+    id: 'log-' + Date.now(),
+    created_at: log.created_at || new Date().toISOString()
+  }
+
+  const currentLogs = getMockDB('access_logs', DEFAULT_ACCESS_LOGS)
+  const updatedLogs = [newLog, ...currentLogs]
+  saveMockDB('access_logs', updatedLogs)
+
+  if (isConfigured) {
+    try {
+      await supabase.from('access_logs').insert(log)
+    } catch (err) {
+      console.warn('Supabase access_logs table write warning (stored locally):', err.message)
+    }
+  }
+
+  return newLog
+}
+

@@ -5,11 +5,12 @@ import { getRoleModulePermissions, hasModulePermission } from '../../lib/permiss
 import {
   Zap, Users, Briefcase, GraduationCap,
   BarChart2, Settings, LogOut, CheckSquare, CalendarDays, ChevronDown,
-  Sparkles, Globe, ClipboardList, Send
+  Sparkles, Globe, ClipboardList, Send, Building2
 } from 'lucide-react'
 
 const NAV = [
   { to: '/dashboard',   icon: Zap,             label: 'Dashboard',   key: 'dashboard' },
+  { to: '/companies',   icon: Building2,       label: 'Client Companies', key: 'companies', superadminOnly: true },
   { to: '/hiring',      icon: Briefcase,       label: 'Hiring',      key: 'hiring' },
   { to: '/interviews',  icon: CalendarDays,    label: 'Interviews',  key: 'interviews' },
   { to: '/candidates',  icon: Users,           label: 'Candidates',  key: 'candidates' },
@@ -23,7 +24,7 @@ const NAV = [
 ]
 
 const ROLE_LABELS = {
-  admin: 'Admin', hr: 'HR Manager', manager: 'Manager', interviewer: 'Interviewer', employee: 'Employee'
+  superadmin: 'Super Admin', admin: 'Client Admin', hr: 'HR Manager', manager: 'Manager', interviewer: 'Interviewer', employee: 'Employee'
 }
 
 export default function Sidebar() {
@@ -350,8 +351,10 @@ export default function Sidebar() {
       {/* Nav Link list */}
       <nav style={{ flex: 1, padding: '16px 14px', display: 'flex', flexDirection: 'column', gap: 4 }}>
         {NAV.filter(n => {
-          const rolePerms = permissions[user?.role] || {}
-          return rolePerms[n.key] !== false
+          if (n.superadminOnly) {
+            return user?.role === 'superadmin' && !user?.isImpersonating
+          }
+          return hasModulePermission(user, n.key, permissions)
         }).map(({ to, icon: Icon, label }) => (
           <NavLink key={to} to={to} style={({ isActive }) => ({
             display: 'flex',
@@ -400,7 +403,7 @@ export default function Sidebar() {
               flexDirection: 'column',
               gap: 2
             }}>
-              {hasModulePermission(user?.role, 'settings') && (
+              {hasModulePermission(user, 'settings', permissions) && (
                 <NavLink 
                   to="/settings" 
                   onClick={() => setShowProfileDropdown(false)}

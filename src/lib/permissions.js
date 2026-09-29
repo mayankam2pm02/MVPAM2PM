@@ -1,6 +1,22 @@
 const DEFAULT_ROLE_PERMISSIONS = {
+  superadmin: {
+    dashboard: { view: true, create: true, update: true, delete: true },
+    companies: { view: true, create: true, update: true, delete: true },
+    hiring: { view: true, create: true, update: true, delete: true },
+    interviews: { view: true, create: true, update: true, delete: true },
+    candidates: { view: true, create: true, update: true, delete: true },
+    onboarding: { view: true, create: true, update: true, delete: true },
+    training: { view: true, create: true, update: true, delete: true },
+    crm: { view: true, create: true, update: true, delete: true },
+    campaigns: { view: true, create: true, update: true, delete: true },
+    portals: { view: true, create: true, update: true, delete: true },
+    reports: { view: true, create: true, update: true, delete: true },
+    prompts: { view: true, create: true, update: true, delete: true },
+    settings: { view: true, create: true, update: true, delete: true }
+  },
   admin: {
     dashboard: { view: true, create: true, update: true, delete: true },
+    companies: { view: false, create: false, update: false, delete: false },
     hiring: { view: true, create: true, update: true, delete: true },
     interviews: { view: true, create: true, update: true, delete: true },
     candidates: { view: true, create: true, update: true, delete: true },
@@ -15,6 +31,7 @@ const DEFAULT_ROLE_PERMISSIONS = {
   },
   hr: {
     dashboard: { view: true, create: false, update: false, delete: false },
+    companies: { view: false, create: false, update: false, delete: false },
     hiring: { view: true, create: true, update: true, delete: true },
     interviews: { view: true, create: true, update: true, delete: true },
     candidates: { view: true, create: true, update: true, delete: false },
@@ -29,6 +46,7 @@ const DEFAULT_ROLE_PERMISSIONS = {
   },
   manager: {
     dashboard: { view: true, create: false, update: false, delete: false },
+    companies: { view: false, create: false, update: false, delete: false },
     hiring: { view: true, create: true, update: true, delete: false },
     interviews: { view: true, create: true, update: true, delete: false },
     candidates: { view: true, create: true, update: true, delete: false },
@@ -43,6 +61,7 @@ const DEFAULT_ROLE_PERMISSIONS = {
   },
   interviewer: {
     dashboard: { view: true, create: false, update: false, delete: false },
+    companies: { view: false, create: false, update: false, delete: false },
     hiring: { view: false, create: false, update: false, delete: false },
     interviews: { view: true, create: false, update: true, delete: false },
     candidates: { view: true, create: false, update: false, delete: false },
@@ -57,6 +76,7 @@ const DEFAULT_ROLE_PERMISSIONS = {
   },
   employee: {
     dashboard: { view: true, create: false, update: false, delete: false },
+    companies: { view: false, create: false, update: false, delete: false },
     hiring: { view: false, create: false, update: false, delete: false },
     interviews: { view: false, create: false, update: false, delete: false },
     candidates: { view: false, create: false, update: false, delete: false },
@@ -117,24 +137,92 @@ export function saveRoleModulePermissions(permissions) {
   window.dispatchEvent(new Event('role-permissions-change'))
 }
 
-export function hasModulePermission(role, moduleKey) {
-  if (!role) return false
-  if (role === 'admin') return true
-  if (moduleKey === 'dashboard') return true
-  const permissions = getRoleModulePermissions()
-  const val = permissions[role]?.[moduleKey]
-  if (val && typeof val === 'object') {
-    return !!val.view
+export function hasModulePermission(roleOrUser, moduleKey, customPermissions = null) {
+  if (!roleOrUser) return false
+
+  const role = typeof roleOrUser === 'object' ? roleOrUser?.role : roleOrUser
+  const user = typeof roleOrUser === 'object' ? roleOrUser : null
+
+  // Super Admin outside of impersonation has access to all modules
+  if (role === 'superadmin' && !user?.isImpersonating) return true
+  
+  // The 'companies' module is strictly restricted to Super Admin
+  if (moduleKey === 'companies') {
+    return role === 'superadmin' && !user?.isImpersonating
   }
-  return !!val
+
+  // 1. Check user-level custom permissions first (e.g., from profiles.permissions)
+  if (user && user.permissions && typeof user.permissions === 'object') {
+    const userPerm = user.permissions[moduleKey]
+    if (userPerm !== undefined) {
+      if (Array.isArray(userPerm)) {
+        return userPerm.includes('view')
+      }
+      if (userPerm && typeof userPerm === 'object') {
+        return !!userPerm.view
+      }
+      return !!userPerm
+    }
+  }
+
+  // 2. Check role-level module permissions
+  const permissions = customPermissions || getRoleModulePermissions()
+  const roleConfig = permissions[role]
+  
+  if (roleConfig && roleConfig[moduleKey] !== undefined) {
+    const val = roleConfig[moduleKey]
+    if (val && typeof val === 'object') {
+      return !!val.view
+    }
+    return !!val
+  }
+
+  // Default module access fallbacks
+  if (moduleKey === 'dashboard') return true
+  if (role === 'admin') return true
+
+  return false
 }
 
-export function hasActionPermission(role, moduleKey, action) {
-  if (!role) return false
-  const permissions = getRoleModulePermissions()
-  const val = permissions[role]?.[moduleKey]
-  if (val && typeof val === 'object') {
-    return !!val[action]
+export function hasActionPermission(roleOrUser, moduleKey, action = 'view', customPermissions = null) {
+  if (!roleOrUser) return false
+
+  const role = typeof roleOrUser === 'object' ? roleOrUser?.role : roleOrUser
+  const user = typeof roleOrUser === 'object' ? roleOrUser : null
+
+  if (role === 'superadmin' && !user?.isImpersonating) return true
+  if (moduleKey === 'companies') return role === 'superadmin' && !user?.isImpersonating
+
+  // 1. User-level custom permissions
+  if (user && user.permissions && typeof user.permissions === 'object') {
+    const userPerm = user.permissions[moduleKey]
+    if (userPerm !== undefined) {
+      if (Array.isArray(userPerm)) {
+        return userPerm.includes(action)
+      }
+      if (userPerm && typeof userPerm === 'object') {
+        if (action === 'edit' && userPerm.update !== undefined) return !!userPerm.update
+        if (action === 'update' && userPerm.edit !== undefined) return !!userPerm.edit
+        return !!userPerm[action]
+      }
+      return !!userPerm
+    }
   }
-  return !!val
+
+  // 2. Role-level permissions
+  const permissions = customPermissions || getRoleModulePermissions()
+  const roleConfig = permissions[role]
+  
+  if (roleConfig && roleConfig[moduleKey] !== undefined) {
+    const val = roleConfig[moduleKey]
+    if (val && typeof val === 'object') {
+      if (action === 'edit' && val.update !== undefined) return !!val.update
+      if (action === 'update' && val.edit !== undefined) return !!val.edit
+      return !!val[action]
+    }
+    return !!val
+  }
+
+  if (role === 'admin') return true
+  return false
 }

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth.jsx'
 import { fetchJobs, fetchCandidates, fetchAllApplications, fetchTasks } from '../lib/supabase.js'
 import NotificationBell from '../components/layout/NotificationBell.jsx'
+import { hasModulePermission } from '../lib/permissions.js'
 import {
   Briefcase, Users, CheckCircle, TrendingUp, ArrowRight,
   MoreVertical, Plus, Filter, Calendar, Search, Clock
@@ -65,7 +66,13 @@ export default function Dashboard() {
   const [loading, setLoading]             = useState(true)
 
   useEffect(() => {
-    Promise.all([fetchJobs(), fetchCandidates(), fetchAllApplications(), fetchTasks()])
+    setLoading(true)
+    Promise.all([
+      fetchJobs(user?.company_id),
+      fetchCandidates(user?.company_id),
+      fetchAllApplications(user?.company_id),
+      fetchTasks(user?.company_id)
+    ])
       .then(([j, c, a, t]) => {
         setJobs(j || [])
         setCandidates(c || [])
@@ -74,7 +81,7 @@ export default function Dashboard() {
       })
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [])
+  }, [user?.company_id])
 
   // Calculate live statistics
   const activeJobs = jobs.filter(j => j.status === 'active').length
@@ -369,7 +376,7 @@ export default function Dashboard() {
       </div>
 
       {/* Task Reminders banner */}
-      {tasks.length > 0 && (
+      {tasks.length > 0 && hasModulePermission(user, 'crm') && (
         <div className="card" style={{
           padding: '16px 20px',
           borderRadius: 16,
@@ -491,142 +498,241 @@ export default function Dashboard() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               
               {/* Post Job Action */}
-              <div
-                onClick={() => navigate('/hiring/new')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '12px 16px',
-                  borderRadius: 12,
-                  border: '1px solid var(--border)',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  background: '#FFF'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#4F46E5'
-                  e.currentTarget.style.background = '#F9FAFB'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--border)'
-                  e.currentTarget.style.background = '#FFF'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 8,
-                    background: '#EEF2FF',
-                    color: '#4F46E5',
+              {hasModulePermission(user, 'hiring') && (
+                <div
+                  onClick={() => navigate('/hiring/new')}
+                  style={{
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center'
-                  }}>
-                    <Plus size={16} />
+                    justifyContent: 'space-between',
+                    padding: '12px 16px',
+                    borderRadius: 12,
+                    border: '1px solid var(--border)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    background: '#FFF'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#4F46E5'
+                    e.currentTarget.style.background = '#F9FAFB'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--border)'
+                    e.currentTarget.style.background = '#FFF'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 8,
+                      background: '#EEF2FF',
+                      color: '#4F46E5',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <Plus size={16} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>Post a new job</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>Create a new job posting in minutes</div>
+                    </div>
                   </div>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>Post a new job</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>Create a new job posting in minutes</div>
-                  </div>
+                  <ArrowRight size={14} color="var(--text-3)" />
                 </div>
-                <ArrowRight size={14} color="var(--text-3)" />
-              </div>
+              )}
 
               {/* View Candidate DB Action */}
-              <div
-                onClick={() => navigate('/candidates')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '12px 16px',
-                  borderRadius: 12,
-                  border: '1px solid var(--border)',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  background: '#FFF'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#10B981'
-                  e.currentTarget.style.background = '#F9FAFB'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--border)'
-                  e.currentTarget.style.background = '#FFF'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 8,
-                    background: '#ECFDF5',
-                    color: '#10B981',
+              {hasModulePermission(user, 'candidates') && (
+                <div
+                  onClick={() => navigate('/candidates')}
+                  style={{
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center'
-                  }}>
-                    <Users size={16} />
+                    justifyContent: 'space-between',
+                    padding: '12px 16px',
+                    borderRadius: 12,
+                    border: '1px solid var(--border)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    background: '#FFF'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#10B981'
+                    e.currentTarget.style.background = '#F9FAFB'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--border)'
+                    e.currentTarget.style.background = '#FFF'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 8,
+                      background: '#ECFDF5',
+                      color: '#10B981',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <Users size={16} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>View candidate database</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>Browse and manage all candidates</div>
+                    </div>
                   </div>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>View candidate database</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>Browse and manage all candidates</div>
-                  </div>
+                  <ArrowRight size={14} color="var(--text-3)" />
                 </div>
-                <ArrowRight size={14} color="var(--text-3)" />
-              </div>
+              )}
 
               {/* View Hiring Pipeline Action */}
-              <div
-                onClick={() => navigate('/hiring')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '12px 16px',
-                  borderRadius: 12,
-                  border: '1px solid var(--border)',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  background: '#FFF'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#2563EB'
-                  e.currentTarget.style.background = '#F9FAFB'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--border)'
-                  e.currentTarget.style.background = '#FFF'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 8,
-                    background: '#EFF6FF',
-                    color: '#2563EB',
+              {hasModulePermission(user, 'hiring') && (
+                <div
+                  onClick={() => navigate('/hiring')}
+                  style={{
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center'
-                  }}>
-                    <Filter size={14} />
+                    justifyContent: 'space-between',
+                    padding: '12px 16px',
+                    borderRadius: 12,
+                    border: '1px solid var(--border)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    background: '#FFF'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#2563EB'
+                    e.currentTarget.style.background = '#F9FAFB'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--border)'
+                    e.currentTarget.style.background = '#FFF'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 8,
+                      background: '#EFF6FF',
+                      color: '#2563EB',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <Filter size={14} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>View hiring pipeline</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>Track your hiring process</div>
+                    </div>
                   </div>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>View hiring pipeline</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>Track your hiring process</div>
-                  </div>
+                  <ArrowRight size={14} color="var(--text-3)" />
                 </div>
-                <ArrowRight size={14} color="var(--text-3)" />
-              </div>
+              )}
+
+              {/* View Training Modules Action */}
+              {hasModulePermission(user, 'training') && (
+                <div
+                  onClick={() => navigate('/training')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '12px 16px',
+                    borderRadius: 12,
+                    border: '1px solid var(--border)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    background: '#FFF'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#7C3AED'
+                    e.currentTarget.style.background = '#F9FAFB'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--border)'
+                    e.currentTarget.style.background = '#FFF'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 8,
+                      background: '#F5F3FF',
+                      color: '#7C3AED',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <Clock size={14} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>Training & Skills</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>Access learning courses and modules</div>
+                    </div>
+                  </div>
+                  <ArrowRight size={14} color="var(--text-3)" />
+                </div>
+              )}
+
+              {/* Tasks & CRM Action */}
+              {hasModulePermission(user, 'crm') && (
+                <div
+                  onClick={() => navigate('/crm')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '12px 16px',
+                    borderRadius: 12,
+                    border: '1px solid var(--border)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    background: '#FFF'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#D97706'
+                    e.currentTarget.style.background = '#F9FAFB'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--border)'
+                    e.currentTarget.style.background = '#FFF'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 8,
+                      background: '#FEF3C7',
+                      color: '#D97706',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <CheckCircle size={14} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>Tasks & Operations</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>Track operational checklist items</div>
+                    </div>
+                  </div>
+                  <ArrowRight size={14} color="var(--text-3)" />
+                </div>
+              )}
 
             </div>
           </div>
         </div>
 
         {/* Recent Job Postings Card */}
+        {hasModulePermission(user, 'hiring') && (
         <div className="card" style={{
           borderRadius: 16,
           background: '#FFF',
@@ -765,6 +871,7 @@ export default function Dashboard() {
             View all postings <ArrowRight size={13} />
           </div>
         </div>
+        )}
 
       </div>
 
@@ -776,6 +883,7 @@ export default function Dashboard() {
       }}>
         
         {/* Hiring Pipeline Overview */}
+        {hasModulePermission(user, 'hiring') && (
         <div className="card" style={{
           borderRadius: 16,
           background: '#FFF',
@@ -843,8 +951,10 @@ export default function Dashboard() {
             View full pipeline <ArrowRight size={13} />
           </div>
         </div>
+        )}
 
         {/* Upcoming Interviews Card */}
+        {hasModulePermission(user, 'interviews') && (
         <div className="card" style={{
           borderRadius: 16,
           background: '#FFF',
@@ -974,6 +1084,7 @@ export default function Dashboard() {
             View all interviews <ArrowRight size={13} />
           </div>
         </div>
+        )}
 
       </div>
     </div>
