@@ -1,6 +1,6 @@
 const API_URL = '/anthropic/v1/messages'
 const MODEL   = 'claude-haiku-4-5-20251001'
-const rawKey = import.meta.env.VITE_CLAUDE_API_KEY
+const rawKey = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.VITE_CLAUDE_API_KEY : (typeof process !== 'undefined' ? process.env?.VITE_CLAUDE_API_KEY : null)
 const API_KEY = rawKey && rawKey !== 'your_claude_api_key' ? rawKey : null
 
 async function callClaude(system, userMessage, maxTokens = 1000) {
@@ -167,49 +167,174 @@ Return the full JD as clean plain text with clear sections.`
   return callClaude(system, prompt, 1000)
 }
 
+// ─── GENERATE JOB CRITERIA & QUALIFYING QUESTIONS ─────────────
+
+const DOMAIN_SKILL_PRESETS = {
+  Engineering: ['JavaScript', 'TypeScript', 'React', 'Node.js', 'Python', 'Java', 'SQL', 'PostgreSQL', 'MongoDB', 'AWS', 'Docker', 'Git', 'REST APIs'],
+  Frontend: ['React', 'JavaScript', 'TypeScript', 'HTML5', 'CSS3', 'Redux', 'Tailwind CSS', 'REST APIs', 'Git'],
+  Backend: ['Node.js', 'Python', 'Java', 'PostgreSQL', 'MongoDB', 'Redis', 'REST APIs', 'Microservices', 'Docker', 'AWS'],
+  Sales: ['B2B Sales', 'Lead Generation', 'Cold Calling', 'CRM (Salesforce / HubSpot)', 'Pipeline Management', 'Client Relationships', 'Negotiation', 'Closing Deals'],
+  Marketing: ['Digital Marketing', 'SEO', 'PPC / Google Ads', 'Content Strategy', 'Social Media Marketing', 'Email Marketing', 'Google Analytics', 'Copywriting'],
+  HR: ['End-to-End Recruitment', 'Talent Sourcing', 'Resume Screening', 'ATS Management', 'Employee Onboarding', 'Labor Law Compliance', 'Employee Relations'],
+  Finance: ['Financial Accounting', 'Tally Prime / ERP', 'GST & TDS Filing', 'Balance Sheet Reconciliation', 'Budgeting & Forecasting', 'Auditing', 'Advanced MS Excel'],
+  Operations: ['Process Optimization', 'SLA Management', 'Workflow Automation', 'Vendor Management', 'Supply Chain Coordination', 'Resource Allocation', 'KPI Tracking'],
+  "Customer Success": ['Customer Onboarding', 'Account Management', 'Zendesk / Freshdesk', 'Client Retention', 'Churn Reduction', 'Customer Advocacy'],
+  Design: ['Figma', 'UI/UX Design', 'User Research', 'Wireframing', 'Prototyping', 'Design Systems', 'Adobe Creative Suite']
+}
+
+export function extractSkillsFromText(text = '') {
+  if (!text) return []
+  const skills = []
+  const lines = text.split('\n')
+  let inSkillsSection = false
+  
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (/^(skills|key skills|requirements|must have|technical skills|qualifications):/i.test(trimmed)) {
+      inSkillsSection = true
+      continue
+    }
+    if (inSkillsSection && /^(responsibilities|what we offer|nice to have|about us|role summary):/i.test(trimmed)) {
+      inSkillsSection = false
+    }
+    if (inSkillsSection && trimmed.startsWith('-')) {
+      const item = trimmed.replace(/^[-*•]\s*/, '').replace(/^(strong proficiency in|experience with|knowledge of|proven track record in)\s*/i, '').trim()
+      if (item && item.length < 50) {
+        item.split(/[,/]/).forEach(s => {
+          const sTrim = s.trim()
+          if (sTrim && sTrim.length > 1 && sTrim.length < 35) skills.push(sTrim)
+        })
+      }
+    }
+  }
+
+  return [...new Set(skills)]
+}
+
+export async function generateJobCriteria({ title, department, jd, skills, experience, description }) {
+  const roleTitle = title || 'Specialist'
+  const dept = department || 'General'
+
+  if (API_KEY) {
+    const system = `You are an elite Talent Acquisition Specialist and Technical Recruiter.
+Your job is to analyze a role and Job Description (JD) and extract:
+1. Exact required skills (technical, domain-specific, tools, and methodologies).
+2. 4 to 6 specific, objective qualifying screening questions that can be evaluated directly from a candidate's CV/resume.
+Each qualifying question must be a clear yes/no question about experience, skills, tools, or certifications.
+Mark 1-2 non-negotiable questions as "dealbreaker: true" (e.g., minimum required experience, mandatory licensing or core technology).
+Always return valid JSON ONLY with NO markdown fences, no explanatory text.`
+
+    const prompt = `Analyze this role and job description:
+Role: ${roleTitle}
+Department: ${dept}
+Required Experience: ${experience || 'Not specified'}
+Specified Skills: ${skills || 'Not specified'}
+Job Description:
+${jd || description || ''}
+
+Return ONLY this JSON structure:
+{
+  "requiredSkills": ["Skill 1", "Skill 2", "Skill 3", "Skill 4", "Skill 5", "Skill 6"],
+  "qualifyingQuestions": [
+    { "question": "Does the candidate have at least X years of hands-on experience in ...?", "dealbreaker": true },
+    { "question": "Does the candidate have demonstrated expertise with ...?", "dealbreaker": true },
+    { "question": "Has the candidate worked with ...?", "dealbreaker": false },
+    { "question": "Does the candidate have experience in ...?", "dealbreaker": false }
+  ]
+}`
+
+    try {
+      const raw = await callClaude(system, prompt, 800)
+      const clean = raw.replace(/```json|```/g, '').trim()
+      const parsed = JSON.parse(clean)
+      if (Array.isArray(parsed.requiredSkills) && Array.isArray(parsed.qualifyingQuestions)) {
+        return {
+          requiredSkills: parsed.requiredSkills.filter(Boolean),
+          qualifyingQuestions: parsed.qualifyingQuestions.map(q => ({
+            question: q.question || '',
+            dealbreaker: !!q.dealbreaker
+          })).filter(q => q.question.trim().length > 0)
+        }
+      }
+    } catch (e) {
+      console.warn('Claude generateJobCriteria fallback:', e.message)
+    }
+  }
+
+  // Heuristic generation fallback:
+  const extractedFromJD = extractSkillsFromText(jd)
+  const userSkills = skills ? skills.split(',').map(s => s.trim()).filter(Boolean) : []
+  const presetSkills = DOMAIN_SKILL_PRESETS[dept] || DOMAIN_SKILL_PRESETS['Engineering']
+  const matchedPresets = presetSkills.filter(s => (jd || '').toLowerCase().includes(s.toLowerCase()) || roleTitle.toLowerCase().includes(s.toLowerCase()))
+
+  const combinedSkills = [...new Set([...userSkills, ...extractedFromJD, ...matchedPresets, ...presetSkills.slice(0, 6)])].slice(0, 8)
+
+  let reqYears = 2
+  const expMatch = (experience || jd || '').match(/(\d+)\s*(?:\+|plus|[-–—]|to)?\s*(\d+)?\s*(?:years?|yrs?)/i)
+  if (expMatch) {
+    reqYears = parseInt(expMatch[1]) || 2
+  }
+
+  const qList = []
+  qList.push({
+    question: `Does the candidate have at least ${reqYears} year${reqYears > 1 ? 's' : ''} of relevant professional experience as a ${roleTitle} or in a directly related role?`,
+    dealbreaker: true
+  })
+
+  const primarySkills = combinedSkills.slice(0, 3)
+  if (primarySkills.length > 0) {
+    qList.push({
+      question: `Does the candidate demonstrate hands-on expertise in key required skills (${primarySkills.join(', ')})?`,
+      dealbreaker: true
+    })
+  }
+
+  const secondarySkills = combinedSkills.slice(3, 6)
+  if (secondarySkills.length > 0) {
+    qList.push({
+      question: `Has the candidate handled core responsibilities involving ${secondarySkills.join(', ')}?`,
+      dealbreaker: false
+    })
+  } else {
+    qList.push({
+      question: `Does the candidate's background show end-to-end execution of projects and operational goals in ${dept}?`,
+      dealbreaker: false
+    })
+  }
+
+  qList.push({
+    question: `Does the candidate exhibit familiarity with modern ${dept} tools, documentation standards, and collaborative team processes?`,
+    dealbreaker: false
+  })
+
+  qList.push({
+    question: `Does the candidate possess a recognized degree, diploma, or relevant professional certification suitable for this role?`,
+    dealbreaker: false
+  })
+
+  return {
+    requiredSkills: combinedSkills,
+    qualifyingQuestions: qList
+  }
+}
+
 // ─── SCREEN RESUME ────────────────────────────────────────────
 
-export async function screenResume({ cvText, jd, candidateName, qualifyingQuestions = [] }) {
-  if (!API_KEY) {
-    const textLower = (cvText || '').toLowerCase()
-    const jdLower = (jd || '').toLowerCase()
+export async function screenResume({ cvText, jd, candidateName, qualifyingQuestions = [], requiredSkills = [] }) {
+  const textLower = (cvText || '').toLowerCase()
+  const jdLower = (jd || '').toLowerCase()
 
-    // 1. Estimate Candidate Experience from CV
-    let candExp = 0
-    const expRegex = /(\d+)\s*(?:years?|yrs?)\b/gi
-    let match
-    while ((match = expRegex.exec(cvText)) !== null) {
-      const val = parseInt(match[1])
-      if (val > candExp && val < 25) {
-        candExp = val
-      }
-    }
-    const yearRangeRegex = /\b(20\d{2})\s*(?:-|to)\s*(20\d{2}|present|current)\b/gi
-    let yearRangeCount = 0
-    while ((match = yearRangeRegex.exec(cvText)) !== null) {
-      const startYear = parseInt(match[1])
-      const endYear = match[2].toLowerCase().includes('pres') || match[2].toLowerCase().includes('curr') 
-        ? new Date().getFullYear() 
-        : parseInt(match[2])
-      const diff = endYear - startYear
-      if (diff > 0 && diff < 15) {
-        yearRangeCount += diff
-      }
-    }
-    candExp = Math.max(candExp, yearRangeCount)
-
-    // 2. Parse Required Experience from JD
-    let reqExp = 0
-    const reqExpRegex = /(\d+)\s*(?:years?|yrs?)\b/gi
-    let jdMatch
-    while ((jdMatch = reqExpRegex.exec(jd)) !== null) {
-      const val = parseInt(jdMatch[1])
-      if (val > reqExp && val < 15) {
-        reqExp = val
-      }
-    }
-
-    // 3. Extract and Match Skills
+  // 1. Resolve Target Required Skills for this specific job
+  let targetSkills = []
+  if (Array.isArray(requiredSkills)) {
+    targetSkills = requiredSkills.map(s => String(s).trim()).filter(Boolean)
+  } else if (typeof requiredSkills === 'string' && requiredSkills.trim()) {
+    targetSkills = requiredSkills.split(',').map(s => s.trim()).filter(Boolean)
+  }
+  if (!targetSkills.length && jd) {
+    targetSkills = extractSkillsFromText(jd)
+  }
+  if (!targetSkills.length) {
     const COMMON_SKILLS = [
       'react', 'node.js', 'node', 'javascript', 'typescript', 'html', 'css', 'sql', 'postgresql', 'mongodb', 
       'aws', 'gcp', 'docker', 'kubernetes', 'git', 'python', 'java', 'salesforce', 'crm', 'b2b sales', 
@@ -217,127 +342,212 @@ export async function screenResume({ cvText, jd, candidateName, qualifyingQuesti
       'product management', 'jira', 'agile', 'scrum', 'excel', 'communication', 'customer success', 
       'operations', 'recruiting', 'onboarding', 'hr', 'finance', 'accounting'
     ]
-    
-    const jdSkills = COMMON_SKILLS.filter(s => {
-      const regex = new RegExp(`\\b${s.replace('.', '\\.')}\\b`, 'i')
-      return regex.test(jdLower)
-    })
+    targetSkills = COMMON_SKILLS.filter(s => jdLower.includes(s.toLowerCase()))
+  }
+  if (!targetSkills.length) {
+    targetSkills = ['communication', 'teamwork', 'problem solving']
+  }
 
-    const matchedSkills = jdSkills.filter(s => {
-      const regex = new RegExp(`\\b${s.replace('.', '\\.')}\\b`, 'i')
-      return regex.test(textLower)
-    })
+  // 2. Estimate Candidate Experience from CV
+  let candExp = 0
+  const expRegex = /(\d+)\s*(?:years?|yrs?)\b/gi
+  let match
+  while ((match = expRegex.exec(cvText)) !== null) {
+    const val = parseInt(match[1])
+    if (val > candExp && val < 25) candExp = val
+  }
+  const yearRangeRegex = /\b(20\d{2})\s*(?:-|to)\s*(20\d{2}|present|current)\b/gi
+  let yearRangeCount = 0
+  while ((match = yearRangeRegex.exec(cvText)) !== null) {
+    const startYear = parseInt(match[1])
+    const endYear = match[2].toLowerCase().includes('pres') || match[2].toLowerCase().includes('curr') 
+      ? new Date().getFullYear() 
+      : parseInt(match[2])
+    const diff = endYear - startYear
+    if (diff > 0 && diff < 15) yearRangeCount += diff
+  }
+  candExp = Math.max(candExp, yearRangeCount)
 
-    const missingSkills = jdSkills.filter(s => !matchedSkills.includes(s))
+  // 3. Parse Required Experience from JD
+  let reqExp = 0
+  const reqExpRegex = /(\d+)\s*(?:years?|yrs?)\b/gi
+  let jdMatch
+  while ((jdMatch = reqExpRegex.exec(jd)) !== null) {
+    const val = parseInt(jdMatch[1])
+    if (val > reqExp && val < 15) reqExp = val
+  }
 
-    // Calculate skills match score
-    let skillsScore = 80
-    if (jdSkills.length > 0) {
-      skillsScore = Math.round((matchedSkills.length / jdSkills.length) * 100)
-    }
+  // 4. Calculate Skills Match using the job's actual required skills
+  const matchedSkills = targetSkills.filter(s => {
+    const escaped = s.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')
+    return new RegExp(`\\b${escaped}\\b`, 'i').test(textLower) || textLower.includes(s.toLowerCase())
+  })
+  const missingSkills = targetSkills.filter(s => !matchedSkills.includes(s))
+  const skillsScore = targetSkills.length > 0
+    ? Math.round((matchedSkills.length / targetSkills.length) * 100)
+    : 75
 
-    // Calculate experience match score
-    let expScore = 100
-    if (reqExp > 0) {
-      if (candExp >= reqExp) {
-        expScore = 100
-      } else {
-        expScore = Math.max(20, Math.round((candExp / reqExp) * 100))
-      }
-    } else {
-      expScore = candExp > 0 ? 90 : 70
-    }
+  // 5. Calculate Experience Match
+  let expScore = 100
+  if (reqExp > 0) {
+    if (candExp >= reqExp) expScore = 100
+    else expScore = Math.max(20, Math.round((candExp / reqExp) * 100))
+  } else {
+    expScore = candExp > 0 ? 90 : 70
+  }
 
-    // Estimate Education match score
-    let eduScore = 70
-    const eduKeywords = ['b.tech', 'm.tech', 'b.e.', 'mba', 'b.sc', 'm.sc', 'degree', 'iit', 'bits', 'university', 'college', 'graduate', 'bachelor', 'master']
-    const hasEdu = eduKeywords.filter(k => textLower.includes(k))
-    if (hasEdu.length >= 3) {
-      eduScore = 95
-    } else if (hasEdu.length >= 1) {
-      eduScore = 85
-    }
+  // 6. Estimate Education Match
+  let eduScore = 70
+  const eduKeywords = ['b.tech', 'm.tech', 'b.e.', 'mba', 'b.sc', 'm.sc', 'degree', 'iit', 'bits', 'university', 'college', 'graduate', 'bachelor', 'master', 'ca', 'icwa', 'cs', 'b.com', 'm.com']
+  const hasEdu = eduKeywords.filter(k => textLower.includes(k))
+  if (hasEdu.length >= 3) eduScore = 95
+  else if (hasEdu.length >= 1) eduScore = 85
 
-    // 4. Evaluate Qualifying Questions
-    let autoReject = false
-    const qualifyingResults = qualifyingQuestions.map(q => {
-      const qText = q.question.toLowerCase()
-      let answer = 'Cannot determine'
-      let confidence = 'low'
-      let notes = 'Inferred from resume keyword check.'
+  // 7. Evaluate Qualifying Questions
+  let autoReject = false
+  let passedQuestionsCount = 0
 
-      if (qText.includes('experience') || qText.includes('years') || qText.includes('yrs')) {
-        const numMatch = qText.match(/(\d+)\+?\s*years?/)
-        if (numMatch) {
-          const reqYears = parseInt(numMatch[1])
-          if (candExp >= reqYears) {
-            answer = 'Yes'
-            confidence = 'high'
-            notes = `Candidate has approximately ${candExp} years of experience.`
-          } else {
-            answer = 'No'
-            confidence = 'high'
-            notes = `Candidate has only ${candExp} years of experience.`
-            if (q.dealbreaker) autoReject = true
-          }
-        }
-      } else {
-        const matchingSkill = COMMON_SKILLS.find(s => qText.includes(s) && textLower.includes(s))
-        if (matchingSkill) {
+  const qualifyingResults = qualifyingQuestions.map(q => {
+    const qText = (q.question || '').toLowerCase()
+    let answer = 'Cannot determine'
+    let confidence = 'low'
+    let notes = 'Inferred from resume keyword check.'
+
+    if (qText.includes('experience') || qText.includes('years') || qText.includes('yrs')) {
+      const numMatch = qText.match(/(\d+)\+?\s*years?/)
+      if (numMatch) {
+        const qYears = parseInt(numMatch[1])
+        if (candExp >= qYears) {
           answer = 'Yes'
           confidence = 'high'
-          notes = `Candidate resume mentions '${matchingSkill}'.`
+          notes = `Candidate has approximately ${candExp} years of experience (meets/exceeds ${qYears} yrs).`
+          passedQuestionsCount += 1
+        } else if (candExp >= Math.max(1, qYears - 1)) {
+          answer = 'Partial'
+          confidence = 'medium'
+          notes = `Candidate has approximately ${candExp} years of experience (close to ${qYears} yrs).`
+          passedQuestionsCount += 0.5
         } else {
-          const missingSkill = COMMON_SKILLS.find(s => qText.includes(s))
-          if (missingSkill) {
-            answer = 'No'
-            confidence = 'high'
-            notes = `Candidate resume does not mention '${missingSkill}'.`
-            if (q.dealbreaker) autoReject = true
-          }
+          answer = 'No'
+          confidence = 'high'
+          notes = `Candidate has only ${candExp} years of experience (below ${qYears} yrs required).`
+          if (q.dealbreaker) autoReject = true
+        }
+      } else {
+        if (candExp > 0) {
+          answer = 'Yes'
+          confidence = 'high'
+          notes = `Candidate has verifiable industry experience (${candExp} yrs).`
+          passedQuestionsCount += 1
+        } else {
+          answer = 'No'
+          confidence = 'medium'
+          notes = 'No clear years of professional experience identified.'
+          if (q.dealbreaker) autoReject = true
         }
       }
-
-      return {
-        question: q.question,
-        dealbreaker: !!q.dealbreaker,
-        inferredAnswer: answer,
-        confidence,
-        notes
+    } else if (qText.includes('degree') || qText.includes('education') || qText.includes('certification')) {
+      if (hasEdu.length > 0) {
+        answer = 'Yes'
+        confidence = 'high'
+        notes = `Candidate lists educational background (${hasEdu.slice(0, 2).join(', ')}).`
+        passedQuestionsCount += 1
+      } else {
+        answer = 'Cannot determine'
+        confidence = 'low'
+        notes = 'Specific degree or certification not clearly identified in CV.'
+        passedQuestionsCount += 0.5
       }
-    })
+    } else {
+      const mentionedSkills = targetSkills.filter(s => qText.includes(s.toLowerCase()))
+      if (mentionedSkills.length > 0) {
+        const found = mentionedSkills.filter(s => textLower.includes(s.toLowerCase()))
+        if (found.length === mentionedSkills.length) {
+          answer = 'Yes'
+          confidence = 'high'
+          notes = `Candidate resume mentions: ${found.join(', ')}.`
+          passedQuestionsCount += 1
+        } else if (found.length > 0) {
+          answer = 'Partial'
+          confidence = 'medium'
+          notes = `Mentions ${found.join(', ')}, but missing: ${mentionedSkills.filter(s => !found.includes(s)).join(', ')}.`
+          passedQuestionsCount += 0.5
+        } else {
+          answer = 'No'
+          confidence = 'high'
+          notes = `Resume does not mention required skills: ${mentionedSkills.join(', ')}.`
+          if (q.dealbreaker) autoReject = true
+        }
+      } else {
+        if (skillsScore >= 65) {
+          answer = 'Yes'
+          confidence = 'medium'
+          notes = 'Candidate background aligns with this requirement.'
+          passedQuestionsCount += 1
+        } else if (skillsScore >= 35) {
+          answer = 'Partial'
+          confidence = 'low'
+          notes = 'Partial skill alignment found in resume.'
+          passedQuestionsCount += 0.5
+        } else {
+          answer = 'No'
+          confidence = 'medium'
+          notes = 'Insufficient evidence in resume for this requirement.'
+          if (q.dealbreaker) autoReject = true
+        }
+      }
+    }
 
-    // Calculate final overall score
-    let score = Math.round((skillsScore * 0.4) + (expScore * 0.4) + (eduScore * 0.2))
-    
+    return {
+      question: q.question,
+      dealbreaker: !!q.dealbreaker,
+      inferredAnswer: answer,
+      confidence,
+      notes
+    }
+  })
+
+  // 8. Deterministic Fallback Score Calculation
+  if (!API_KEY) {
+    const questionsScore = qualifyingQuestions.length > 0
+      ? Math.round((passedQuestionsCount / qualifyingQuestions.length) * 100)
+      : skillsScore
+
+    let score = qualifyingQuestions.length > 0
+      ? Math.round((skillsScore * 0.35) + (questionsScore * 0.35) + (expScore * 0.20) + (eduScore * 0.10))
+      : Math.round((skillsScore * 0.45) + (expScore * 0.35) + (eduScore * 0.20))
+
     if (autoReject) {
-      score = Math.min(score, 35) // Forced below 45 to trigger reject recommendation
+      score = Math.min(score, 35)
     }
 
     let recommendation = 'maybe'
     if (score >= 75) recommendation = 'shortlist'
-    else if (score < 45) recommendation = 'reject'
+    else if (score < 45 || autoReject) recommendation = 'reject'
 
     const strengths = []
     if (matchedSkills.length > 0) {
-      strengths.push(`Proficient in core skills: ${matchedSkills.slice(0, 3).join(', ')}.`)
+      strengths.push(`Proficient in role-specific skills: ${matchedSkills.slice(0, 4).join(', ')}.`)
     }
     if (candExp > 0) {
       strengths.push(`Possesses around ${candExp} years of relevant professional experience.`)
     }
     if (strengths.length === 0) {
-      strengths.push("Candidate shows relevant coursework or general alignment.")
+      strengths.push('Candidate shows relevant foundational background.')
     }
 
     const gaps = []
     if (missingSkills.length > 0) {
-      gaps.push(`Does not explicitly list skills: ${missingSkills.slice(0, 3).join(', ')}.`)
+      gaps.push(`Does not explicitly list required skills: ${missingSkills.slice(0, 3).join(', ')}.`)
     }
     if (reqExp > 0 && candExp < reqExp) {
       gaps.push(`Experience (${candExp} years) is below the preferred ${reqExp} years.`)
     }
+    if (autoReject) {
+      gaps.push('Failed a critical dealbreaker screening question.')
+    }
 
-    const summary = `Candidate ${candidateName || 'Applicant'} shows a ${score}% match with the job description. Core strengths include ${matchedSkills.slice(0, 2).join(' and ') || 'general experience'}.`
+    const summary = `Candidate ${candidateName || 'Applicant'} shows a ${score}% match based on ${targetSkills.length} job-specific skills and ${qualifyingQuestions.length} screening questions. Core matches include ${matchedSkills.slice(0, 3).join(', ') || 'general experience'}.`
 
     return {
       score,
@@ -352,8 +562,9 @@ export async function screenResume({ cvText, jd, candidateName, qualifyingQuesti
     }
   }
 
-  const system = localStorage.getItem('company_screening_prompt') || `You are an expert recruiter and HR professional.
-Screen resumes against job descriptions objectively and fairly.
+  // 9. Claude LLM Mode
+  const system = localStorage.getItem('company_screening_prompt') || `You are an expert recruiter and talent acquisition professional.
+Screen resumes against the specific Job Description, Required Skills, and Qualifying Questions objectively and rigorously.
 Always respond with valid JSON only — no markdown fences, no explanation, no extra text.`
 
   const hasQQ = qualifyingQuestions.length > 0
@@ -363,11 +574,11 @@ QUALIFYING QUESTIONS (infer answers from the resume — be fair but honest):
 ${qualifyingQuestions.map((q, i) => `Q${i + 1}${q.dealbreaker ? ' [DEALBREAKER]' : ''}: ${q.question}`).join('\n')}
 
 For each qualifying question return an object in "qualifyingResults":
-{ "question": "<text>", "dealbreaker": <true|false>, "inferredAnswer": "<Yes|No|Partial|Cannot determine>", "confidence": "<high|medium|low>", "notes": "<1 sentence explanation>" }
+{ "question": "<text>", "dealbreaker": <true|false>, "inferredAnswer": "<Yes|No|Partial|Cannot determine>", "confidence": "<high|medium|low>", "notes": "<1 sentence evidence from resume>" }
 
-IMPORTANT: If any DEALBREAKER question is answered "No" with high confidence, set recommendation to "reject" and heavily penalize the score.` : ''
+IMPORTANT: If any DEALBREAKER question is answered "No" with high confidence, set recommendation to "reject" and cap score <= 35.` : ''
 
-  const prompt = `Screen this candidate against the job description. Return ONLY a JSON object:
+  const prompt = `Screen this candidate specifically against this job's criteria and qualifying questions. Return ONLY a JSON object:
 {
   "score": <integer 0-100>,
   "recommendation": <"shortlist" | "maybe" | "reject">,
@@ -379,9 +590,10 @@ IMPORTANT: If any DEALBREAKER question is answered "No" with high confidence, se
   "educationMatch": <integer 0-100>${hasQQ ? ',\n  "qualifyingResults": [<array of qualifying question result objects>]' : ''}
 }
 
-Scoring guide: 75+ = shortlist, 45-74 = maybe, below 45 = reject
+Scoring guide: 75+ = shortlist, 45-74 = maybe, below 45 = reject. Weight required skills and qualifying questions heavily.
 
 Candidate: ${candidateName}
+Target Required Skills: ${targetSkills.join(', ')}
 
 JOB DESCRIPTION:
 ${jd}${qqBlock}
@@ -397,7 +609,7 @@ Return only the JSON object, nothing else.`
     const clean = raw.replace(/```json|```/g, '').trim()
     const parsed = JSON.parse(clean)
 
-    const qualifyingResults = hasQQ && Array.isArray(parsed.qualifyingResults)
+    const parsedQQ = hasQQ && Array.isArray(parsed.qualifyingResults)
       ? parsed.qualifyingResults.map(r => ({
           question:       r.question      || '',
           dealbreaker:    !!r.dealbreaker,
@@ -405,7 +617,7 @@ Return only the JSON object, nothing else.`
           confidence:     ['high','medium','low'].includes(r.confidence) ? r.confidence : 'low',
           notes:          r.notes         || '',
         }))
-      : []
+      : qualifyingResults
 
     return {
       score:              Math.min(100, Math.max(0, parseInt(parsed.score) || 50)),
@@ -416,7 +628,7 @@ Return only the JSON object, nothing else.`
       experienceMatch:    Math.min(100, Math.max(0, parseInt(parsed.experienceMatch) || 50)),
       skillsMatch:        Math.min(100, Math.max(0, parseInt(parsed.skillsMatch) || 50)),
       educationMatch:     Math.min(100, Math.max(0, parseInt(parsed.educationMatch) || 50)),
-      qualifyingResults,
+      qualifyingResults:  parsedQQ,
     }
   } catch {
     return {

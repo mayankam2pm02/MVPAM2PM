@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../lib/auth.jsx'
 import { createJob } from '../../lib/supabase.js'
-import { generateJD } from '../../lib/claude.js'
-import { Sparkles, ChevronLeft, Save, Plus, Trash2, AlertTriangle } from 'lucide-react'
+import { generateJD, generateJobCriteria } from '../../lib/claude.js'
+import { Sparkles, ChevronLeft, Save, Plus, Trash2, AlertTriangle, Loader, CheckCircle2 } from 'lucide-react'
 
 export default function NewJob() {
   const navigate = useNavigate()
@@ -16,6 +16,7 @@ export default function NewJob() {
   const [questions, setQuestions] = useState([]) // [{ question, dealbreaker }]
   const [jd, setJd] = useState('')
   const [generating, setGenerating] = useState(false)
+  const [generatingQuestions, setGeneratingQuestions] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -45,13 +46,49 @@ export default function NewJob() {
     setError('')
     setGenerating(true)
     try {
-      const r = await generateJD(form)
-      setJd(r)
+      const generatedJd = await generateJD(form)
+      setJd(generatedJd)
+
+      // Automatically generate tailored required skills and screening questions from the JD
+      try {
+        const criteria = await generateJobCriteria({ ...form, jd: generatedJd })
+        if (criteria?.requiredSkills?.length && !form.skills.trim()) {
+          set('skills', criteria.requiredSkills.join(', '))
+        }
+        if (criteria?.qualifyingQuestions?.length && questions.length === 0) {
+          setQuestions(criteria.qualifyingQuestions)
+        }
+      } catch (critErr) {
+        console.warn('Auto criteria generation note:', critErr.message)
+      }
+
       setStep(2)
     } catch (e) {
       setError('AI error: ' + e.message)
     } finally {
       setGenerating(false)
+    }
+  }
+
+  async function handleAutoGenerateQuestions() {
+    if (!form.title.trim() && !jd.trim() && !form.skills.trim()) {
+      setError('Please provide at least a Job title, Key skills, or JD to auto-generate questions.')
+      return
+    }
+    setError('')
+    setGeneratingQuestions(true)
+    try {
+      const criteria = await generateJobCriteria({ ...form, jd })
+      if (criteria?.qualifyingQuestions?.length) {
+        setQuestions(criteria.qualifyingQuestions)
+      }
+      if (criteria?.requiredSkills?.length && !form.skills.trim()) {
+        set('skills', criteria.requiredSkills.join(', '))
+      }
+    } catch (e) {
+      setError('Failed to generate screening questions: ' + e.message)
+    } finally {
+      setGeneratingQuestions(false)
     }
   }
 
@@ -217,27 +254,55 @@ export default function NewJob() {
 
           {/* ── Qualifying questions ── */}
           <div style={{ borderTop: '1px solid var(--border)', marginTop: '1.25rem', paddingTop: '1.25rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
               <div>
-                <div style={{ fontWeight: 700, fontSize: 14 }}>Qualifying Questions</div>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>Qualifying Questions &amp; Screening Criteria</div>
                 <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>
-                  AI will screen each candidate's CV against these questions and flag mismatches.
-                  Mark a question as <strong>Dealbreaker</strong> to auto-reject candidates who don't meet it.
+                  AI screens each CV specifically against these questions. Mark non-negotiable questions as <strong>Dealbreaker</strong>.
                 </div>
               </div>
-              <button className="btn btn-secondary btn-sm" onClick={addQuestion}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-                <Plus size={13} /> Add Question
-              </button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleAutoGenerateQuestions}
+                  disabled={generatingQuestions}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#4F46E5', borderColor: '#C7D2FE', background: '#EEF2FF', fontWeight: 600 }}
+                >
+                  <Sparkles size={13} color="#4F46E5" />
+                  {generatingQuestions ? 'Generating…' : '✨ AI Generate Questions'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={addQuestion}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0 }}
+                >
+                  <Plus size={13} /> Add Question
+                </button>
+              </div>
             </div>
 
             {questions.length === 0 && (
               <div style={{
-                padding: '1rem', background: 'var(--bg-2)', borderRadius: 8,
+                padding: '1.25rem', background: '#F8FAFC', borderRadius: 8,
                 border: '1px dashed var(--border)', textAlign: 'center',
-                fontSize: 13, color: 'var(--text-3)'
+                fontSize: 13, color: 'var(--text-3)', margin: '8px 0'
               }}>
-                No qualifying questions yet. Click "Add Question" to add screening criteria.
+                <Sparkles size={20} color="#4F46E5" style={{ display: 'block', margin: '0 auto 8px' }} />
+                <p style={{ margin: '0 0 4px', fontWeight: 600, color: 'var(--text-1)' }}>No screening questions yet</p>
+                <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--text-3)' }}>
+                  Questions will be generated automatically when you click "Generate JD with AI", or click below to generate them now.
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleAutoGenerateQuestions}
+                  disabled={generatingQuestions}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#4F46E5', borderColor: '#C7D2FE', background: '#EEF2FF', margin: '0 auto' }}
+                >
+                  <Sparkles size={13} /> {generatingQuestions ? 'Analyzing role…' : 'Generate Questions with AI'}
+                </button>
               </div>
             )}
 
@@ -331,19 +396,57 @@ export default function NewJob() {
               ))}
             </div>
 
-            {questions.filter(q => q.question.trim()).length > 0 && (
+            {form.skills && (
               <div className="card" style={{ padding: '1.25rem' }}>
-                <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-2)', marginBottom: '0.75rem' }}>
-                  Qualifying Questions ({questions.filter(q => q.question.trim()).length})
+                <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-2)', marginBottom: '0.5rem' }}>
+                  Target Screening Skills
                 </div>
-                {questions.filter(q => q.question.trim()).map((q, i) => (
-                  <div key={i} style={{ fontSize: 12, padding: '6px 0', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                    {q.dealbreaker && <AlertTriangle size={11} color="var(--warning)" style={{ flexShrink: 0, marginTop: 2 }} />}
-                    <span style={{ color: 'var(--text-2)' }}>{q.question}</span>
-                  </div>
-                ))}
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  {form.skills.split(',').map(s => s.trim()).filter(Boolean).map((s, idx) => (
+                    <span key={idx} className="badge badge-brand" style={{ fontSize: 11 }}>{s}</span>
+                  ))}
+                </div>
               </div>
             )}
+
+            <div className="card" style={{ padding: '1.25rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-2)' }}>
+                  Screening Questions ({questions.filter(q => q.question.trim()).length})
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={handleAutoGenerateQuestions}
+                  disabled={generatingQuestions}
+                  style={{ fontSize: 11, color: '#4F46E5', padding: '2px 6px' }}
+                >
+                  <Sparkles size={11} style={{ marginRight: 3 }} />
+                  {generatingQuestions ? 'Updating…' : 'Re-generate'}
+                </button>
+              </div>
+
+              {questions.filter(q => q.question.trim()).length === 0 ? (
+                <div style={{ fontSize: 12, color: 'var(--text-3)', textAlign: 'center', padding: '10px 0' }}>
+                  No questions yet. Click Re-generate to create from JD.
+                </div>
+              ) : (
+                questions.filter(q => q.question.trim()).map((q, i) => (
+                  <div key={i} style={{ fontSize: 12, padding: '7px 0', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                    {q.dealbreaker ? (
+                      <span style={{ fontSize: 9, fontWeight: 700, color: '#DC2626', background: '#FEE2E2', padding: '1px 5px', borderRadius: 4, flexShrink: 0, marginTop: 1 }}>
+                        DEALBREAKER
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--text-3)', background: 'var(--bg-2)', padding: '1px 5px', borderRadius: 4, flexShrink: 0, marginTop: 1 }}>
+                        Q{i + 1}
+                      </span>
+                    )}
+                    <span style={{ color: 'var(--text-1)', lineHeight: 1.4 }}>{q.question}</span>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
       )}

@@ -736,7 +736,13 @@ export default function Candidates() {
     const map = {}
     for (const c of withCV) {
       try {
-        const res = await screenResume({ cvText: c.cv_text, jd: job.jd, candidateName: c.name })
+        const res = await screenResume({
+          cvText: c.cv_text,
+          jd: job.jd,
+          candidateName: c.name,
+          qualifyingQuestions: job.qualifying_questions || [],
+          requiredSkills: job.skills || []
+        })
         map[c.id] = res
       } catch {
         map[c.id] = { score: 0, recommendation: 'reject', summary: 'Screening failed.', strengths: [], gaps: [], experienceMatch: 0, skillsMatch: 0, educationMatch: 0 }

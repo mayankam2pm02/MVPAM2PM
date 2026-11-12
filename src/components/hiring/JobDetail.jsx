@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../lib/auth.jsx'
 import { fetchJobs, fetchApplicationsForJob, fetchAllApplications, fetchCandidates, createApplication, createCandidate, updateApplication, deleteApplication, updateJob, resetApplicationScreening, createEmployee, generateTemporaryPassword } from '../../lib/supabase.js'
-import { screenResume, generateJD } from '../../lib/claude.js'
+import { screenResume, generateJD, generateJobCriteria } from '../../lib/claude.js'
 import { extractText, nameFromFile } from '../../lib/fileExtract.js'
 import { sendConsentEmail, sendInterviewEmail, sendOfferEmail, sendEmployeeWelcomeEmail } from '../../lib/resend.js'
 import { sendWhatsAppMessage } from '../../lib/twilio.js'
@@ -193,11 +193,30 @@ export default function JobDetail() {
     if (!app.candidates?.cv_text) { setError('No CV text available for AI screening.'); return }
     setScreening(s => ({ ...s, [app.id]: true }))
     try {
+      let questionsToUse = job.qualifying_questions || []
+      if (!questionsToUse.length && job.jd) {
+        try {
+          const crit = await generateJobCriteria({
+            title: job.title,
+            department: job.department,
+            jd: job.jd,
+            skills: job.skills,
+            experience: job.experience
+          })
+          if (crit?.qualifyingQuestions?.length) {
+            questionsToUse = crit.qualifyingQuestions
+          }
+        } catch (critErr) {
+          console.warn('Auto criteria note:', critErr.message)
+        }
+      }
+
       const r = await screenResume({
         cvText: app.candidates.cv_text,
         jd: job.jd,
         candidateName: app.candidates.name,
-        qualifyingQuestions: job.qualifying_questions || [],
+        qualifyingQuestions: questionsToUse,
+        requiredSkills: job.skills || []
       })
       const updated = await updateApplication(app.id, {
         screen_score: r.score,
@@ -473,8 +492,19 @@ The ${company} Hiring Team`
     setEditError('')
     setEditGenerating(true)
     try {
-      const jd = await generateJD(editForm)
-      setEditJd(jd)
+      const generatedJd = await generateJD(editForm)
+      setEditJd(generatedJd)
+      try {
+        const crit = await generateJobCriteria({ ...editForm, jd: generatedJd })
+        if (crit?.qualifyingQuestions?.length && editQuestions.length === 0) {
+          setEditQuestions(crit.qualifyingQuestions)
+        }
+        if (crit?.requiredSkills?.length && !editForm.skills) {
+          setEditForm(f => ({ ...f, skills: crit.requiredSkills.join(', ') }))
+        }
+      } catch (critErr) {
+        console.warn('Auto criteria note:', critErr.message)
+      }
       setEditStep(2)
     } catch (e) {
       setEditError('AI error: ' + e.message)
@@ -1353,17 +1383,39 @@ The ${company} Hiring Team`
 
                 {/* Qualifying questions editor */}
                 <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
                     <div style={{ fontSize: 13, fontWeight: 700 }}>
-                      Qualifying Questions
+                      Qualifying Questions &amp; Screening Criteria
                       <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-3)', marginLeft: 8 }}>
                         AI infers answers from each candidate's CV during screening
                       </span>
                     </div>
-                    <button className="btn btn-secondary btn-sm" onClick={addEQ}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                      <Plus size={12} /> Add
-                    </button>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={async () => {
+                          try {
+                            const crit = await generateJobCriteria({ ...editForm, jd: editJd || job?.jd })
+                            if (crit?.qualifyingQuestions?.length) {
+                              setEditQuestions(crit.qualifyingQuestions)
+                            }
+                            if (crit?.requiredSkills?.length && !editForm.skills) {
+                              setEF('skills', crit.requiredSkills.join(', '))
+                            }
+                          } catch (e) {
+                            alert('Failed to generate criteria: ' + e.message)
+                          }
+                        }}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#4F46E5', background: '#EEF2FF', borderColor: '#C7D2FE' }}
+                      >
+                        <Sparkles size={12} color="#4F46E5" /> Auto-generate from JD
+                      </button>
+                      <button className="btn btn-secondary btn-sm" onClick={addEQ}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        <Plus size={12} /> Add
+                      </button>
+                    </div>
                   </div>
                   {editQuestions.length === 0 && (
                     <div style={{ fontSize: 12, color: 'var(--text-3)', padding: '10px 0' }}>No qualifying questions.</div>
