@@ -1,6 +1,39 @@
+// Common TLDs used to repair emails where PDF text extraction glued the next
+// word onto the address (e.g. "john@gmail.comLinkedIn" -> "john@gmail.com").
+const KNOWN_TLDS = [
+  'com', 'org', 'net', 'edu', 'gov', 'mil', 'int', 'info', 'biz', 'name', 'pro',
+  'in', 'co', 'io', 'ai', 'me', 'us', 'uk', 'ca', 'au', 'de', 'fr', 'sg', 'ae',
+  'nz', 'za', 'ng', 'ke', 'pk', 'bd', 'lk', 'np', 'cn', 'jp', 'kr', 'ru', 'br',
+  'it', 'es', 'nl', 'se', 'ch', 'ie', 'ac', 'tv', 'cc', 'ws', 'dev', 'app',
+  'xyz', 'tech', 'online', 'site', 'store', 'cloud', 'email', 'live', 'work',
+]
+// Real long TLDs that must never be truncated by the repair above.
+const LONG_TLDS = new Set(['company', 'solutions', 'digital', 'global', 'agency', 'consulting', 'services', 'technology', 'technologies', 'systems', 'network', 'university', 'education', 'finance', 'media', 'group', 'world', 'today', 'center', 'academy'])
+
+function repairEmail(email) {
+  if (!email || !email.includes('@')) return email
+  let [local, domain] = email.split('@')
+
+  // Phone number glued in front of the address: "9876543210john@x.com"
+  local = local.replace(/^\d{10,}(?=[a-z])/, '')
+
+  // Next word glued after the TLD: "john@gmail.comlinkedin"
+  const labels = domain.split('.')
+  const last = labels[labels.length - 1]
+  if (last && last.length > 3 && !KNOWN_TLDS.includes(last) && !LONG_TLDS.has(last)) {
+    const match = KNOWN_TLDS
+      .filter(t => last.startsWith(t))
+      .sort((a, b) => b.length - a.length)[0]
+    if (match) labels[labels.length - 1] = match
+  }
+  domain = labels.join('.')
+
+  return `${local}@${domain}`
+}
+
 function normalizeEmailCandidate(raw) {
   if (!raw || typeof raw !== 'string') return ''
-  return raw
+  const cleaned = raw
     .toLowerCase()
     .trim()
     .replace(/^mailto:\s*/i, '')
@@ -11,6 +44,24 @@ function normalizeEmailCandidate(raw) {
     .replace(/\s*\.\s*/g, '.')
     .replace(/[.,;:)>]+$/, '')
     .replace(/^\(+/, '')
+  return repairEmail(cleaned)
+}
+
+/**
+ * Lenient validator for emails typed by a user. Returns the cleaned address
+ * (lower-cased, trimmed, "mailto:" stripped) or '' if it is not usable.
+ * Unlike isLikelyEmail it does NOT reject placeholder/example domains, so users
+ * can always enter whatever real address they have.
+ */
+export function sanitizeManualEmail(raw) {
+  if (!raw || typeof raw !== 'string') return ''
+  const clean = raw.trim().toLowerCase().replace(/^mailto:\s*/i, '').replace(/^<|>$/g, '').replace(/\s+/g, '')
+  return /^[a-z0-9._%+\-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,24}$/.test(clean) ? clean : ''
+}
+
+/** Unique placeholder used when a CV has no email, so the DB NOT NULL constraint is satisfied. */
+export function makePlaceholderEmail(seed = '') {
+  return `cv.import.${Date.now()}${seed !== '' ? '.' + seed : ''}.${Math.random().toString(36).slice(2, 6)}@noemail.local`
 }
 
 export function isLikelyEmail(candidate) {

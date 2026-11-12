@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../lib/auth.jsx'
-import { fetchJobs, fetchApplicationsForJob, fetchAllApplications, fetchCandidates, createApplication, createCandidate, updateApplication, deleteApplication, updateJob, resetApplicationScreening, createEmployee } from '../../lib/supabase.js'
+import { fetchJobs, fetchApplicationsForJob, fetchAllApplications, fetchCandidates, createApplication, createCandidate, updateApplication, deleteApplication, updateJob, resetApplicationScreening, createEmployee, generateTemporaryPassword } from '../../lib/supabase.js'
 import { screenResume, generateJD } from '../../lib/claude.js'
 import { extractText, nameFromFile } from '../../lib/fileExtract.js'
-import { sendConsentEmail, sendInterviewEmail, sendOfferEmail } from '../../lib/resend.js'
+import { sendConsentEmail, sendInterviewEmail, sendOfferEmail, sendEmployeeWelcomeEmail } from '../../lib/resend.js'
 import { sendWhatsAppMessage } from '../../lib/twilio.js'
-import { extractCandidateEmail, buildEmailDraft, getCleanCandidateEmail } from '../../lib/emailUtils.js'
+import { extractCandidateEmail, buildEmailDraft, getCleanCandidateEmail, makePlaceholderEmail } from '../../lib/emailUtils.js'
 import { cleanCandidateName, getCleanCandidateName } from '../../lib/nameUtils.js'
 import { ChevronLeft, Upload, Sparkles, Mail, Calendar, CheckCircle, XCircle, FileText, Loader, Send, Star, X, Pencil, RefreshCw, Phone, MessageCircle, Video, GraduationCap, ChevronDown, Download, AlertTriangle, Plus, Trash2, Search, SlidersHorizontal } from 'lucide-react'
 
@@ -313,6 +313,8 @@ The ${company} Hiring Team`
     const empId     = `EMP${Date.now().toString().slice(-6)}`
     const candEmail = getCleanCandidateEmail(app.candidates) || app.candidates?.email || `emp.${empId}@internal.local`
     const isRealEmail = !candEmail.includes('@noemail.local') && !candEmail.includes('@internal.local')
+    const password = generateTemporaryPassword()
+    const targetCompanyId = job.company_id || user?.company_id || null
 
     try {
       // 1 — create employee record (critical — email NOT NULL so always pass a value)
@@ -327,8 +329,10 @@ The ${company} Hiring Team`
         department:      job.department,
         location:        job.location,
         status:          'active',
+        password,
         date_of_joining: new Date().toISOString().slice(0, 10),
-      })
+        company_id:      targetCompanyId
+      }, targetCompanyId)
 
       // 2 — mark application as hired (critical)
       const updated = await updateApplication(app.id, {
@@ -338,18 +342,26 @@ The ${company} Hiring Team`
       })
       setApps(prev => prev.map(a => a.id === app.id ? updated : a))
 
-      // 3 — send offer email (best-effort — never blocks the hire)
+      // 3 — send offer & welcome credentials email (best-effort — never blocks the hire)
       let emailNote = ''
       if (isRealEmail) {
         try {
           await sendOfferEmail({ candidateName: candName, candidateEmail: candEmail, jobTitle: job.title, salary: job.salary })
-          emailNote = '\nOffer email sent to candidate.'
+          await sendEmployeeWelcomeEmail({
+            employeeName: candName,
+            employeeEmail: candEmail,
+            employeeId: empId,
+            password,
+            role: job.title,
+            companyName: user?.company_name || 'AM2PM Support'
+          })
+          emailNote = '\nOffer letter and agent login credentials sent to candidate email.'
         } catch {
-          emailNote = '\nOffer email could not be sent (check Resend config).'
+          emailNote = '\nEmail notification could not be sent (check email config).'
         }
       }
 
-      alert(`✅ ${candName} hired! Employee ID: ${empId}${emailNote}\n\nThey are now available in the Training section.`)
+      alert(`✅ ${candName} hired!\nEmployee ID: ${empId}\nTemporary Password: ${password}${emailNote}\n\nThey can now sign in to the portal and are enrolled in Training.`)
     } catch (e) {
       setError(e.message || 'Failed to complete hire. Please try again.')
     }
@@ -379,27 +391,36 @@ The ${company} Hiring Team`
       const idx = startIdx + i
       const file = list[i]
       const name = nameFromFile(file.name)
-      // placeholder email keeps DB constraint happy; can be updated later via Settings
-      const placeholderEmail = `cv.import.${Date.now()}.${i}@noemail.local`
+      // Placeholder email keeps the DB NOT NULL constraint happy when a CV has no email.
+      // It can be replaced later by editing the candidate.
+      const placeholderEmail = makePlaceholderEmail(i)
 
       try {
         // Step 1 — extract text
         const cvText = await extractText(file)
         setUploadRows(prev => prev.map((r, j) => j === idx ? { ...r, cvText, status: 'saving', msg: 'Saving…' } : r))
 
-        // Parse email + phone + name from CV text
+        // Parse email + phone + name from CV text (email is optional — never blocks the upload)
         const phoneMatch = cvText.match(/(?:\+?91[-.\s]?)?[6-9]\d{9}|(?:\+?[1-9]\d{0,2}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/)
-        const extractedEmail = extractCandidateEmail(cvText, placeholderEmail)
+        const extractedEmail = extractCandidateEmail(cvText) || placeholderEmail
+        const hasRealEmail = extractedEmail !== placeholderEmail
         const extractedPhone = phoneMatch ? phoneMatch[0].replace(/[-.\s]/g, '').trim() : null
         const finalName = getCleanCandidateName({ name, cv_text: cvText }) || name
+        const companyId = job?.company_id || user?.company_id || null
 
         // Step 2 — create candidate + application in one shot
         const cand = await createCandidate({
           name: finalName, email: extractedEmail, phone: extractedPhone || undefined, cv_text: cvText, source: 'upload', status: 'available'
+        }, companyId)
+        const newApp = await createApplication({
+          job_id: id, candidate_id: cand.id, status: 'applied', consent_status: 'not_sent',
+          ...(companyId ? { company_id: companyId } : {})
         })
-        const newApp = await createApplication({ job_id: id, candidate_id: cand.id, status: 'applied', consent_status: 'not_sent' })
         setApps(prev => [{ ...newApp, candidates: cand }, ...prev])
-        setUploadRows(prev => prev.map((r, j) => j === idx ? { ...r, status: 'done', msg: 'Added to pipeline' } : r))
+        setUploadRows(prev => prev.map((r, j) => j === idx ? {
+          ...r, status: 'done',
+          msg: hasRealEmail ? 'Added to pipeline' : 'Added — no email found in CV, add one later'
+        } : r))
       } catch (e) {
         setUploadRows(prev => prev.map((r, j) => j === idx ? { ...r, status: 'error', msg: e.message || 'Failed' } : r))
       }

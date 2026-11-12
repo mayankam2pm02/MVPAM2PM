@@ -1,14 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../lib/auth.jsx'
-import { fetchCandidates, createCandidate, fetchJobs, fetchAllApplications } from '../lib/supabase.js'
+import { fetchCandidates, createCandidate, fetchJobs, fetchAllApplications, createApplication } from '../lib/supabase.js'
 import { screenResume } from '../lib/claude.js'
 import { extractText, nameFromFile } from '../lib/fileExtract.js'
-import { getCleanCandidateEmail } from '../lib/emailUtils.js'
+import { getCleanCandidateEmail, extractCandidateEmail, sanitizeManualEmail, makePlaceholderEmail } from '../lib/emailUtils.js'
 import { getCleanCandidateName } from '../lib/nameUtils.js'
 import {
   Search, Star, MapPin, Briefcase, Upload, Zap, X, CheckCircle,
   AlertCircle, MinusCircle, FileText, Loader, TrendingUp, Users,
-  ChevronDown, ChevronLeft, ChevronRight, MoreVertical, Sparkles, Filter, Clock
+  ChevronDown, ChevronLeft, ChevronRight, MoreVertical, Sparkles, Filter, Clock,
+  UserPlus, Plus
 } from 'lucide-react'
 
 // ─── Shared styles ─────────────────────────────────────────────
@@ -18,8 +19,368 @@ const modalBox = (maxWidth = 560) => ({
   maxHeight: '90vh', display: 'flex', flexDirection: 'column'
 })
 
+// ─── Add Single Candidate Modal ──────────────────────────────
+function AddCandidateModal({ onClose, onSaved, companyId = null, jobs = [] }) {
+  const fileRef = useRef()
+  const [form, setForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    jobId: '',
+    role: '',
+    experience: '',
+    location: '',
+    skills: '',
+    summary: ''
+  })
+  const [cvFile, setCvFile] = useState(null)
+  const [cvText, setCvText] = useState('')
+  const [extractingCv, setExtractingCv] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleFileChange(file) {
+    if (!file) return
+    setCvFile(file)
+    setExtractingCv(true)
+    setError('')
+    try {
+      const text = await extractText(file)
+      setCvText(text)
+
+      // Auto-fill empty fields from the CV if user hasn't typed them yet
+      setForm(prev => {
+        const updates = { ...prev }
+        if (!updates.name.trim()) {
+          const detectedName = nameFromFile(file.name)
+          if (detectedName) updates.name = detectedName
+        }
+        if (!updates.email.trim()) {
+          const detectedEmail = extractCandidateEmail(text)
+          if (detectedEmail) updates.email = detectedEmail
+        }
+        if (!updates.phone.trim()) {
+          const phoneMatch = text.match(/(?:\+?91[-.\s]?)?[6-9]\d{9}|(?:\+?[1-9]\d{0,2}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/)
+          if (phoneMatch) updates.phone = phoneMatch[0].replace(/[-.\s]/g, '').trim()
+        }
+        return updates
+      })
+    } catch (e) {
+      console.warn('Could not extract CV text:', e)
+    } finally {
+      setExtractingCv(false)
+    }
+  }
+
+  async function handleSubmit(e) {
+    e?.preventDefault()
+    const trimmedName = form.name.trim()
+    if (!trimmedName) {
+      setError('Please enter the candidate name.')
+      return
+    }
+
+    const trimmedEmail = form.email.trim()
+    let finalEmail = ''
+    if (trimmedEmail) {
+      finalEmail = sanitizeManualEmail(trimmedEmail)
+      if (!finalEmail) {
+        setError(`"${trimmedEmail}" is not a valid email address. Please correct it or leave it blank.`)
+        return
+      }
+    } else {
+      // Email is completely optional — satisfying DB NOT NULL constraint with a clean internal placeholder
+      finalEmail = makePlaceholderEmail()
+    }
+
+    setError('')
+    setSaving(true)
+
+    try {
+      const parsedSkills = form.skills
+        ? form.skills.split(',').map(s => s.trim()).filter(Boolean)
+        : []
+
+      const candidatePayload = {
+        name: trimmedName,
+        email: finalEmail,
+        phone: form.phone.trim() || null,
+        role: form.role.trim() || null,
+        experience: parseInt(form.experience, 10) || 0,
+        location: form.location.trim() || null,
+        skills: parsedSkills,
+        summary: form.summary.trim() || null,
+        cv_text: cvText || null,
+        source: 'manual',
+        status: 'available',
+        rating: 0
+      }
+
+      const newCand = await createCandidate(candidatePayload, companyId)
+
+      let newApp = null
+      if (form.jobId) {
+        try {
+          newApp = await createApplication({
+            job_id: form.jobId,
+            candidate_id: newCand.id,
+            status: 'applied',
+            consent_status: 'not_sent',
+            ...(companyId ? { company_id: companyId } : {})
+          })
+        } catch (appErr) {
+          console.warn('Could not create application for candidate:', appErr)
+        }
+      }
+
+      onSaved(newCand, newApp)
+      onClose()
+    } catch (err) {
+      setError(err.message || 'Failed to create candidate. Please try again.')
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16, backdropFilter: 'blur(2px)' }}>
+      <div style={modalBox(620)}>
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexShrink: 0 }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--text-1)' }}>Add Candidate</h2>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-3)' }}>
+              Add an individual candidate directly to your talent pool or assign to an active job pipeline.
+            </p>
+          </div>
+          <button className="btn btn-ghost" onClick={onClose}><X size={16} /></button>
+        </div>
+
+        {error && (
+          <div style={{ padding: '8px 12px', background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: 8, color: '#DC2626', fontSize: 12, marginBottom: 14 }}>
+            {error}
+          </div>
+        )}
+
+        {/* Scrollable form body */}
+        <form onSubmit={handleSubmit} style={{ overflowY: 'auto', flex: 1, paddingRight: 4, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* Row 1: Name & Email */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-1)', display: 'block', marginBottom: 4 }}>
+                Candidate Name <span style={{ color: 'var(--danger)' }}>*</span>
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Rahul Sharma"
+                value={form.name}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                style={{ width: '100%', boxSizing: 'border-box', height: 38, fontSize: 13, borderRadius: 8, border: '1px solid var(--border)', padding: '0 10px' }}
+              />
+            </div>
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-1)' }}>
+                  Email Address
+                </label>
+                <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 500 }}>Optional</span>
+              </div>
+              <input
+                type="text"
+                placeholder="e.g. rahul@example.com (optional)"
+                value={form.email}
+                onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                style={{ width: '100%', boxSizing: 'border-box', height: 38, fontSize: 13, borderRadius: 8, border: '1px solid var(--border)', padding: '0 10px' }}
+              />
+              <span style={{ fontSize: 10, color: 'var(--text-3)', display: 'block', marginTop: 2 }}>
+                Email is optional. Auto-placeholder generated if left blank.
+              </span>
+            </div>
+          </div>
+
+          {/* Row 2: Phone & Job Pipeline */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-1)', display: 'block', marginBottom: 4 }}>
+                Phone Number <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 400 }}>(Optional)</span>
+              </label>
+              <input
+                type="tel"
+                placeholder="e.g. +91 98765 43210"
+                value={form.phone}
+                onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+                style={{ width: '100%', boxSizing: 'border-box', height: 38, fontSize: 13, borderRadius: 8, border: '1px solid var(--border)', padding: '0 10px' }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-1)', display: 'block', marginBottom: 4 }}>
+                Assign to Job <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 400 }}>(Optional)</span>
+              </label>
+              <select
+                value={form.jobId}
+                onChange={e => setForm(f => ({ ...f, jobId: e.target.value }))}
+                style={{ width: '100%', boxSizing: 'border-box', height: 38, fontSize: 13, borderRadius: 8, border: '1px solid var(--border)', padding: '0 10px', background: '#FFF' }}
+              >
+                <option value="">Direct Talent Pool (No job)</option>
+                {jobs.map(j => (
+                  <option key={j.id} value={j.id}>{j.title}{j.department ? ` (${j.department})` : ''}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Row 3: Role & Experience */}
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-1)', display: 'block', marginBottom: 4 }}>
+                Current Role / Designation <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 400 }}>(Optional)</span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Senior Frontend Engineer"
+                value={form.role}
+                onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
+                style={{ width: '100%', boxSizing: 'border-box', height: 38, fontSize: 13, borderRadius: 8, border: '1px solid var(--border)', padding: '0 10px' }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-1)', display: 'block', marginBottom: 4 }}>
+                Exp (Years) <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 400 }}>(Optional)</span>
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="50"
+                placeholder="e.g. 4"
+                value={form.experience}
+                onChange={e => setForm(f => ({ ...f, experience: e.target.value }))}
+                style={{ width: '100%', boxSizing: 'border-box', height: 38, fontSize: 13, borderRadius: 8, border: '1px solid var(--border)', padding: '0 10px' }}
+              />
+            </div>
+          </div>
+
+          {/* Row 4: Location & Skills */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-1)', display: 'block', marginBottom: 4 }}>
+                Location <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 400 }}>(Optional)</span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Mumbai, India / Remote"
+                value={form.location}
+                onChange={e => setForm(f => ({ ...f, location: e.target.value }))}
+                style={{ width: '100%', boxSizing: 'border-box', height: 38, fontSize: 13, borderRadius: 8, border: '1px solid var(--border)', padding: '0 10px' }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-1)', display: 'block', marginBottom: 4 }}>
+                Key Skills <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 400 }}>(Comma separated)</span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. React, JavaScript, CSS"
+                value={form.skills}
+                onChange={e => setForm(f => ({ ...f, skills: e.target.value }))}
+                style={{ width: '100%', boxSizing: 'border-box', height: 38, fontSize: 13, borderRadius: 8, border: '1px solid var(--border)', padding: '0 10px' }}
+              />
+            </div>
+          </div>
+
+          {/* Resume Upload (Optional) */}
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-1)', display: 'block', marginBottom: 4 }}>
+              Resume / CV File <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 400 }}>(Optional · PDF, TXT, PNG, JPG)</span>
+            </label>
+            <div
+              onClick={() => fileRef.current?.click()}
+              style={{
+                border: '1.5px dashed var(--border)',
+                borderRadius: 8,
+                padding: '12px 14px',
+                textAlign: 'center',
+                cursor: 'pointer',
+                background: '#F8F9FC',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                fontSize: 12,
+                color: 'var(--text-2)'
+              }}
+            >
+              {extractingCv ? (
+                <>
+                  <Loader size={14} style={{ animation: 'spin 1s linear infinite', color: '#4F46E5' }} />
+                  Extracting CV details…
+                </>
+              ) : cvFile ? (
+                <>
+                  <FileText size={14} color="#10B981" />
+                  <span style={{ fontWeight: 600, color: 'var(--text-1)' }}>{cvFile.name}</span>
+                  <span style={{ color: '#10B981', fontSize: 11 }}>(attached)</span>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setCvFile(null); setCvText('') }}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', padding: 2, display: 'inline-flex' }}
+                  >
+                    <X size={12} />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <Upload size={14} color="var(--text-3)" />
+                  <span>Click to attach resume / CV file (optional)</span>
+                </>
+              )}
+            </div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".pdf,.txt,.png,.jpg,.jpeg"
+              style={{ display: 'none' }}
+              onChange={e => handleFileChange(e.target.files?.[0])}
+            />
+          </div>
+
+          {/* Notes / Summary */}
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-1)', display: 'block', marginBottom: 4 }}>
+              Notes / Summary <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 400 }}>(Optional)</span>
+            </label>
+            <textarea
+              rows={2}
+              placeholder="Candidate background, referral details, or notes..."
+              value={form.summary}
+              onChange={e => setForm(f => ({ ...f, summary: e.target.value }))}
+              style={{ width: '100%', boxSizing: 'border-box', fontSize: 13, borderRadius: 8, border: '1px solid var(--border)', padding: '8px 10px', resize: 'vertical' }}
+            />
+          </div>
+
+          {/* Actions */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+            <button type="button" className="btn btn-secondary" onClick={onClose} disabled={saving}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={saving} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              {saving ? (
+                <>
+                  <Loader size={13} style={{ animation: 'spin 1s linear infinite' }} />
+                  Saving…
+                </>
+              ) : (
+                'Add Candidate'
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 // ─── Bulk Import CV Modal ──────────────────────────────────────
-function ImportCVModal({ onClose, onSaved }) {
+function ImportCVModal({ onClose, onSaved, companyId = null }) {
   const fileRef = useRef()
   const [step, setStep]       = useState('upload')
   const [extracting, setExtracting] = useState(false)
@@ -28,12 +389,15 @@ function ImportCVModal({ onClose, onSaved }) {
   const [saveProgress, setSaveProgress] = useState({ done: 0, total: 0 })
   const [dragOver, setDragOver] = useState(false)
   const [error, setError]     = useState('')
+  const [saveFailures, setSaveFailures] = useState([])
 
   async function processFiles(files) {
-    const list = Array.from(files).filter(f =>
-      f.type === 'application/pdf' || f.type === 'text/plain' || f.name.endsWith('.txt')
-    )
-    if (!list.length) { setError('Please select PDF or TXT files.'); return }
+    const list = Array.from(files).filter(f => {
+      const n = f.name.toLowerCase()
+      return f.type === 'application/pdf' || f.type === 'text/plain' || f.type.startsWith('image/') ||
+        /\.(pdf|txt|png|jpe?g)$/.test(n)
+    })
+    if (!list.length) { setError('Please select PDF, TXT, PNG or JPG files.'); return }
     setError('')
     setExtracting(true)
     setExtractProgress({ done: 0, total: list.length })
@@ -41,7 +405,13 @@ function ImportCVModal({ onClose, onSaved }) {
     for (const file of list) {
       try {
         const cvText = await extractText(file)
-        extracted.push({ file, cvText, name: nameFromFile(file.name), email: '', phone: '', role: '', experience: '', location: '', skills: '', status: 'pending' })
+        const autoEmail = extractCandidateEmail(cvText)
+        const phoneMatch = cvText.match(/(?:\+?91[-.\s]?)?[6-9]\d{9}/)
+        extracted.push({
+          file, cvText, name: nameFromFile(file.name),
+          email: autoEmail, phone: phoneMatch ? phoneMatch[0].replace(/[-.\s]/g, '') : '',
+          role: '', experience: '', location: '', skills: '', status: 'pending'
+        })
       } catch {
         extracted.push({ file, cvText: '', name: nameFromFile(file.name), email: '', phone: '', role: '', experience: '', location: '', skills: '', status: 'error' })
       }
@@ -61,16 +431,27 @@ function ImportCVModal({ onClose, onSaved }) {
   }
 
   async function saveAll() {
-    const valid = rows.filter(r => r.name.trim() && r.email.trim() && r.status !== 'error')
-    if (!valid.length) { setError('At least one candidate needs a name and email.'); return }
+    const candidatesToSave = rows.filter(r => r.status !== 'error')
+    if (!candidatesToSave.length) { setError('There are no readable CVs to save.'); return }
+
+    // Name is required; email is OPTIONAL. If typed it must look like an email.
+    const missingName = candidatesToSave.findIndex(r => !r.name.trim())
+    if (missingName !== -1) { setError(`Please enter a name for "${candidatesToSave[missingName].file.name}".`); return }
+    const badEmail = candidatesToSave.find(r => r.email.trim() && !sanitizeManualEmail(r.email))
+    if (badEmail) { setError(`"${badEmail.email}" is not a valid email address (file: ${badEmail.file.name}). Fix it or leave it empty.`); return }
+
+    setError('')
     setStep('saving')
-    setSaveProgress({ done: 0, total: valid.length })
+    setSaveProgress({ done: 0, total: candidatesToSave.length })
     const saved = []
-    for (const r of valid) {
+    const failures = []
+    for (let i = 0; i < candidatesToSave.length; i++) {
+      const r = candidatesToSave[i]
       try {
         const candidate = {
           name:       r.name.trim(),
-          email:      r.email.trim(),
+          // No email in the CV? Store a placeholder so the DB NOT NULL constraint is satisfied.
+          email:      sanitizeManualEmail(r.email) || makePlaceholderEmail(i),
           phone:      r.phone.trim() || null,
           role:       r.role.trim() || null,
           experience: parseInt(r.experience) || 0,
@@ -80,11 +461,14 @@ function ImportCVModal({ onClose, onSaved }) {
           source:     'upload',
           status:     'available'
         }
-        const result = await createCandidate(candidate)
+        const result = await createCandidate(candidate, companyId)
         saved.push(result)
-      } catch {}
+      } catch (e) {
+        failures.push(`${r.name}: ${e.message || 'failed to save'}`)
+      }
       setSaveProgress(p => ({ ...p, done: p.done + 1 }))
     }
+    setSaveFailures(failures)
     onSaved(saved)
     setStep('done')
   }
@@ -128,11 +512,11 @@ function ImportCVModal({ onClose, onSaved }) {
                 <>
                   <Upload size={30} style={{ color: 'var(--text-3)', display: 'block', margin: '0 auto 12px' }} />
                   <p style={{ margin: 0, fontWeight: 600, fontSize: 14 }}>Drop CVs here or click to browse</p>
-                  <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--text-3)' }}>Supports PDF and TXT · Multiple files allowed</p>
+                  <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--text-3)' }}>Supports PDF, TXT, PNG and JPG · Multiple files allowed · Email not required</p>
                 </>
               )}
             </div>
-            <input ref={fileRef} type="file" accept=".pdf,.txt" multiple style={{ display: 'none' }}
+            <input ref={fileRef} type="file" accept=".pdf,.txt,.png,.jpg,.jpeg" multiple style={{ display: 'none' }}
               onChange={e => processFiles(e.target.files)} />
             {error && <p style={{ color: 'var(--danger)', fontSize: 13, marginTop: 8 }}>{error}</p>}
           </div>
@@ -141,7 +525,7 @@ function ImportCVModal({ onClose, onSaved }) {
         {step === 'review' && (
           <>
             <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 12px', flexShrink: 0 }}>
-              Fill in name &amp; email for each CV. Other fields are optional.
+              Email is detected from the CV automatically. If none is found you can leave it empty and add it later. Only the name is required.
             </p>
             <div style={{ overflowY: 'auto', flex: 1, marginBottom: 12 }}>
               {rows.map((r, i) => (
@@ -161,7 +545,7 @@ function ImportCVModal({ onClose, onSaved }) {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 10px' }}>
                     {[
                       ['name',       'Full Name *',        null],
-                      ['email',      'Email *',            null],
+                      ['email',      'Email (optional)',   null],
                       ['phone',      'Phone',              null],
                       ['role',       'Current Role',       null],
                       ['experience', 'Exp (years)',        null],
@@ -209,7 +593,13 @@ function ImportCVModal({ onClose, onSaved }) {
           <div style={{ textAlign: 'center', padding: '2rem 0' }}>
             <CheckCircle size={40} style={{ color: 'var(--success)', marginBottom: 12 }} />
             <p style={{ fontWeight: 600, fontSize: 16, marginBottom: 6 }}>Import complete!</p>
-            <p style={{ fontSize: 13, color: 'var(--text-3)' }}>{saveProgress.done} candidate{saveProgress.done !== 1 ? 's' : ''} saved successfully.</p>
+            <p style={{ fontSize: 13, color: 'var(--text-3)' }}>{saveProgress.total - saveFailures.length} of {saveProgress.total} candidate{saveProgress.total !== 1 ? 's' : ''} saved successfully.</p>
+            {saveFailures.length > 0 && (
+              <div style={{ textAlign: 'left', margin: '12px auto 0', maxWidth: 420, background: '#fff5f5', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 12px', fontSize: 12, color: 'var(--danger)' }}>
+                <strong>Could not save:</strong>
+                {saveFailures.map((f, i) => <div key={i}>• {f}</div>)}
+              </div>
+            )}
             <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={onClose}>Done</button>
           </div>
         )}
@@ -296,6 +686,7 @@ export default function Candidates() {
   const [fJob, setFJob]             = useState('all')
   const [selected, setSelected]     = useState(null)
   const [showImport, setShowImport] = useState(false)
+  const [showAddModal, setShowAddModal] = useState(false)
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1)
@@ -385,8 +776,10 @@ export default function Candidates() {
         c.skills?.some(s => s.toLowerCase().includes(q))
       if (!match) return false
     }
-    if (fJob !== 'all') {
-      const hasJob = apps.some(a => a.jobs?.id === fJob)
+    if (fJob === 'unassigned') {
+      if (apps.length > 0) return false
+    } else if (fJob !== 'all') {
+      const hasJob = apps.some(a => a.jobs?.id === fJob || a.job_id === fJob)
       if (!hasJob) return false
     }
     return true
@@ -438,7 +831,52 @@ export default function Candidates() {
   ]
 
   function onImported(saved) {
-    setCandidates(prev => [...saved, ...prev])
+    if (!saved?.length) return
+    const ids = new Set(saved.map(s => s.id))
+    setCandidates(prev => [...saved, ...prev.filter(c => !ids.has(c.id))])
+    setSearch('')
+    setFJob('all')
+    setMatchResults({})
+    setCurrentPage(1)
+    if (saved[0]) setSelected(saved[0])
+  }
+
+  function handleCandidateCreated(newCand, newApp) {
+    if (!newCand) return
+    setCandidates(prev => [newCand, ...prev.filter(c => c.id !== newCand.id)])
+    if (newApp) {
+      setAppMap(prev => {
+        const existing = prev[newCand.id] || []
+        return {
+          ...prev,
+          [newCand.id]: [newApp, ...existing]
+        }
+      })
+    }
+    // Clear filters and reset page so newly added candidate is immediately visible
+    setSearch('')
+    setFJob('all')
+    setMatchResults({})
+    setCurrentPage(1)
+    setSelected(newCand)
+  }
+
+  async function assignCandidateToJob(candidateId, jobId) {
+    try {
+      const newApp = await createApplication({
+        job_id: jobId,
+        candidate_id: candidateId,
+        status: 'applied',
+        consent_status: 'not_sent',
+        ...(user?.company_id ? { company_id: user.company_id } : {})
+      })
+      setAppMap(prev => ({
+        ...prev,
+        [candidateId]: [newApp, ...(prev[candidateId] || [])]
+      }))
+    } catch (err) {
+      alert('Failed to assign candidate to job: ' + (err.message || 'unknown error'))
+    }
   }
 
   function bestScreening(candidateId) {
@@ -467,7 +905,7 @@ export default function Candidates() {
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <button
             onClick={() => setShowMatchBar(v => !v)}
             style={{
@@ -475,7 +913,7 @@ export default function Candidates() {
               alignItems: 'center',
               gap: 8,
               height: 38,
-              padding: '0 16px',
+              padding: '0 14px',
               borderRadius: 8,
               background: '#FFF',
               border: '1px solid var(--border)',
@@ -495,6 +933,26 @@ export default function Candidates() {
               alignItems: 'center',
               gap: 8,
               height: 38,
+              padding: '0 14px',
+              borderRadius: 8,
+              background: '#FFF',
+              border: '1px solid var(--border)',
+              color: 'var(--text-1)',
+              fontWeight: 600,
+              fontSize: 13,
+              cursor: 'pointer'
+            }}
+          >
+            <Upload size={14} /> Import CVs
+          </button>
+
+          <button
+            onClick={() => setShowAddModal(true)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              height: 38,
               padding: '0 16px',
               borderRadius: 8,
               background: '#4F46E5',
@@ -502,10 +960,11 @@ export default function Candidates() {
               color: '#FFF',
               fontWeight: 600,
               fontSize: 13,
-              cursor: 'pointer'
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(79, 70, 229, 0.25)'
             }}
           >
-            <Upload size={14} /> Import CVs
+            <UserPlus size={15} /> Add Candidate
           </button>
         </div>
       </div>
@@ -562,7 +1021,7 @@ export default function Candidates() {
         </div>
 
         {/* Job Title filter */}
-        <div style={{ position: 'relative', width: 220 }}>
+        <div style={{ position: 'relative', width: 230 }}>
           <select
             value={fJob}
             onChange={(e) => { setFJob(e.target.value); setCurrentPage(1) }}
@@ -575,11 +1034,13 @@ export default function Candidates() {
               paddingLeft: 12,
               paddingRight: 32,
               appearance: 'none',
-              cursor: 'pointer'
+              cursor: 'pointer',
+              width: '100%'
             }}
           >
-            <option value="all">Job Title</option>
-            {jobTitleOptions.map((j) => (
+            <option value="all">All candidates & jobs</option>
+            <option value="unassigned">Direct / Talent Pool (No job)</option>
+            {jobs.map((j) => (
               <option key={j.id} value={j.id}>{j.title}</option>
             ))}
           </select>
@@ -764,10 +1225,15 @@ export default function Candidates() {
 
                       {/* Job & Location Badges */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
-                        {jobTitle && (
+                        {jobTitle ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                             <Briefcase size={12} color="var(--text-3)" style={{ flexShrink: 0 }} />
                             <span style={{ fontSize: 11, fontWeight: 600, color: '#4F46E5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{jobTitle}</span>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <Briefcase size={12} color="var(--text-3)" style={{ flexShrink: 0 }} />
+                            <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-3)', fontStyle: 'italic' }}>Talent Pool · Direct</span>
                           </div>
                         )}
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
@@ -954,7 +1420,7 @@ export default function Candidates() {
                 <button className="btn btn-ghost btn-sm" onClick={() => setSelected(null)} style={{ flexShrink: 0 }}><X size={14} /></button>
               </div>
 
-              {apps.length > 0 && (
+              {apps.length > 0 ? (
                 <div style={{ marginBottom: 14 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
                     <Briefcase size={11} /> Applied Jobs
@@ -967,9 +1433,34 @@ export default function Candidates() {
                     </div>
                   ))}
                 </div>
+              ) : (
+                <div style={{ marginBottom: 14, padding: 12, background: '#F8F9FC', borderRadius: 8, border: '1px dashed var(--border)' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <Briefcase size={11} /> Direct Talent Pool
+                  </div>
+                  <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 8px' }}>
+                    Candidate is in your general talent pool (not yet assigned to a job pipeline).
+                  </p>
+                  {jobs.length > 0 && (
+                    <select
+                      style={{ width: '100%', height: 32, fontSize: 12, borderRadius: 6, border: '1px solid var(--border)', background: '#FFF', padding: '0 8px' }}
+                      defaultValue=""
+                      onChange={async (e) => {
+                        const jId = e.target.value
+                        if (!jId) return
+                        await assignCandidateToJob(selected.id, jId)
+                      }}
+                    >
+                      <option value="" disabled>+ Assign to a job pipeline…</option>
+                      {jobs.map(j => (
+                        <option key={j.id} value={j.id}>{j.title}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
               )}
 
-              {[['Email', getCleanCandidateEmail(selected) || '—'], ['Phone', selected.phone], ['Location', selected.location], ['Education', selected.education]].map(([l, v]) => (
+              {[['Email', getCleanCandidateEmail(selected) || 'Not provided'], ['Phone', selected.phone], ['Location', selected.location], ['Education', selected.education]].map(([l, v]) => (
                 <div key={l} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
                   <span style={{ color: 'var(--text-3)' }}>{l}</span>
                   <span style={{ fontWeight: 500, textAlign: 'right', maxWidth: 200, wordBreak: 'break-all' }}>{v || '—'}</span>
@@ -1078,7 +1569,15 @@ export default function Candidates() {
 
       </div>
 
-      {showImport && <ImportCVModal onClose={() => setShowImport(false)} onSaved={saved => { onImported(saved); setShowImport(false) }} />}
+      {showAddModal && (
+        <AddCandidateModal
+          companyId={user?.company_id || null}
+          jobs={jobs}
+          onClose={() => setShowAddModal(false)}
+          onSaved={handleCandidateCreated}
+        />
+      )}
+      {showImport && <ImportCVModal companyId={user?.company_id || null} onClose={() => setShowImport(false)} onSaved={saved => { onImported(saved); setShowImport(false) }} />}
     </div>
   )
 }

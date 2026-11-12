@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './lib/auth.jsx'
 import AppShell from './components/layout/AppShell.jsx'
 import Login from './pages/Login.jsx'
+import ResetPassword from './pages/ResetPassword.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import HiringList from './components/hiring/HiringList.jsx'
 import NewJob from './components/hiring/NewJob.jsx'
@@ -43,6 +44,7 @@ function AppRoutes() {
     <Routes>
       {/* Public */}
       <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/consent" element={<ConsentPage />} />
       <Route path="/apply" element={<ApplyPage />} />
       <Route path="/oauth-login" element={<OAuthLoginPage />} />

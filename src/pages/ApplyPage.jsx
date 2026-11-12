@@ -65,7 +65,7 @@ export default function ApplyPage() {
         rating: 4.0
       }
 
-      const newCand = await createCandidate(candidatePayload)
+      const newCand = await createCandidate(candidatePayload, job?.company_id || null)
 
       // 2. Link candidate to application
       if (jobId) {
@@ -73,7 +73,8 @@ export default function ApplyPage() {
           job_id: jobId,
           candidate_id: newCand.id,
           status: 'applied',
-          consent_status: 'not_sent'
+          consent_status: 'not_sent',
+          ...(job?.company_id ? { company_id: job.company_id } : {})
         })
       }
 

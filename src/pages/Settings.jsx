@@ -1,6 +1,21 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../lib/auth.jsx'
-import { supabase, fetchConsentAuditLogs, fetchAccessLogs, createAccessLog } from '../lib/supabase.js'
+import {
+  supabase,
+  fetchConsentAuditLogs,
+  fetchAccessLogs,
+  createAccessLog,
+  fetchProfiles,
+  createTeamMember,
+  deleteProfile,
+  updateProfileStatus,
+  updateProfileRole,
+  updateProfileDetails,
+  generateTemporaryPassword,
+  adminResetPassword,
+  requestPasswordReset
+} from '../lib/supabase.js'
+import { sendEmployeeWelcomeEmail, sendPasswordResetByAdminEmail } from '../lib/resend.js'
 import { getRoleModulePermissions, saveRoleModulePermissions, hasModulePermission } from '../lib/permissions.js'
 import {
   Shield, UserPlus, Check, X, Edit2, FileText,
@@ -10,7 +25,8 @@ import {
   Sparkles, Globe, Send, ClipboardList,
   Pencil, Trash2, Copy, CheckCircle2, UserX,
   ChevronDown, ChevronUp, Search, Users, RefreshCw,
-  LogIn, ShieldAlert, ShieldCheck, Download, AlertCircle, Clock, Laptop, Filter, History
+  LogIn, ShieldAlert, ShieldCheck, Download, AlertCircle, Clock, Laptop, Filter, History,
+  Key, Mail
 } from 'lucide-react'
 
 
@@ -120,7 +136,10 @@ function normalizePermissions(rawPermissions = {}) {
 export default function Settings() {
   const { user, isSuperAdmin } = useAuth()
   const [showAdd, setShowAdd] = useState(false)
-  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'hr', title: '', permissions: buildDefaultPermissions('hr') })
+  const [form, setForm] = useState({ name: '', email: '', password: generateTemporaryPassword(), role: 'employee', title: '', permissions: buildDefaultPermissions('employee') })
+  const [sendEmailCredentials, setSendEmailCredentials] = useState(true)
+  const [lastCreatedCredentials, setLastCreatedCredentials] = useState(null)
+  const [copiedCredentials, setCopiedCredentials] = useState(false)
   const [creating, setCreating] = useState(false)
   const [msg, setMsg] = useState('')
   const [profiles, setProfiles] = useState([])
@@ -133,6 +152,16 @@ export default function Settings() {
   const [editingMember, setEditingMember] = useState(null)
   const [editForm, setEditForm] = useState({ name: '', title: '', role: 'hr', is_active: true })
   const [savingMember, setSavingMember] = useState(false)
+
+  // Reset password modal state
+  const [resetMember, setResetMember] = useState(null)
+  const [resetPwd, setResetPwd] = useState('')
+  const [resetShowPwd, setResetShowPwd] = useState(true)
+  const [resetEmailIt, setResetEmailIt] = useState(true)
+  const [resetting, setResetting] = useState(false)
+  const [resetError, setResetError] = useState('')
+  const [resetResult, setResetResult] = useState(null)
+  const [resetCopied, setResetCopied] = useState(false)
 
   // Delete member modal state
   const [deletingMember, setDeletingMember] = useState(null)
@@ -253,8 +282,7 @@ export default function Settings() {
   const handleQuickRoleChange = async (member, newRole) => {
     setActiveMenuUserId(null)
     try {
-      const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', member.id)
-      if (error) console.warn('Supabase profile update warning:', error)
+      await updateProfileRole(member.id, newRole)
       setProfiles(prev => prev.map(p => p.id === member.id ? { ...p, role: newRole } : p))
       setMsg(`✅ Updated ${member.name || member.email}'s role to ${ROLES_CONFIG[newRole]?.label || newRole}`)
 
@@ -285,8 +313,7 @@ export default function Settings() {
     setActiveMenuUserId(null)
     const nextStatus = member.is_active === false ? true : false
     try {
-      const { error } = await supabase.from('profiles').update({ is_active: nextStatus }).eq('id', member.id)
-      if (error) console.warn('Supabase toggle status warning:', error)
+      await updateProfileStatus(member.id, nextStatus)
       setProfiles(prev => prev.map(p => p.id === member.id ? { ...p, is_active: nextStatus } : p))
       setMsg(`✅ ${member.name || member.email} is now ${nextStatus ? 'Active' : 'Deactivated'}`)
 
@@ -329,7 +356,7 @@ export default function Settings() {
     setEditForm({
       name: member.name || '',
       title: member.title || '',
-      role: member.role || 'hr',
+      role: member.role || 'employee',
       is_active: member.is_active !== false
     })
   }
@@ -345,8 +372,7 @@ export default function Settings() {
         role: editForm.role,
         is_active: editForm.is_active
       }
-      const { error } = await supabase.from('profiles').update(updates).eq('id', editingMember.id)
-      if (error) console.warn('Supabase update profile warning:', error)
+      await updateProfileDetails(editingMember.id, updates)
 
       setProfiles(prev => prev.map(p => p.id === editingMember.id ? { ...p, ...updates } : p))
       setMsg(`✅ Profile for ${editForm.name || editingMember.email} updated successfully!`)
@@ -377,6 +403,101 @@ export default function Settings() {
     }
   }
 
+  // ─── Reset password (admin) ───
+  const canResetPassword = (member) =>
+    member && member.id !== user?.id && !(member.role === 'superadmin' && !isSuperAdmin)
+
+  const handleOpenReset = (member) => {
+    setActiveMenuUserId(null)
+    setShowDirectoryModal(false)
+    setResetMember(member)
+    setResetPwd(generateTemporaryPassword())
+    setResetShowPwd(true)
+    setResetEmailIt(true)
+    setResetError('')
+    setResetResult(null)
+    setResetCopied(false)
+  }
+
+  const closeReset = () => {
+    if (resetting) return
+    setResetMember(null)
+    setResetResult(null)
+    setResetError('')
+  }
+
+  const isRealEmailAddress = (email) => !!email && !/noemail|internal\.local/i.test(email)
+
+  const logResetAction = (details, status = 'warning') => {
+    createAccessLog({
+      company_id: user?.company_id,
+      user_name: user?.name || 'Administrator',
+      user_email: user?.email || '',
+      user_role: user?.role || 'admin',
+      action: 'PASSWORD_RESET',
+      action_label: 'Password Reset',
+      details,
+      ip_address: '103.21.244.18',
+      device: `${navigator?.platform || 'Desktop'} · Web Client`,
+      status
+    }).then(newEntry => {
+      if (newEntry) setAccessLogs(prev => [newEntry, ...prev])
+    }).catch(() => {})
+  }
+
+  const handleConfirmReset = async () => {
+    if (!resetMember) return
+    const newPassword = resetPwd.trim()
+    if (newPassword.length < 6) { setResetError('Password must be at least 6 characters.'); return }
+    setResetting(true)
+    setResetError('')
+    try {
+      const res = await adminResetPassword({ userId: resetMember.id, email: resetMember.email, newPassword })
+
+      let emailed = false
+      let emailError = ''
+      if (resetEmailIt && isRealEmailAddress(resetMember.email)) {
+        try {
+          await sendPasswordResetByAdminEmail({
+            employeeName: resetMember.name,
+            employeeEmail: resetMember.email,
+            password: newPassword,
+            companyName: user?.company_name || 'AM2PM Support'
+          })
+          emailed = true
+        } catch (mailErr) {
+          emailError = mailErr?.message || 'Email could not be sent'
+        }
+      }
+
+      logResetAction(`Reset password for ${resetMember.name || resetMember.email}`)
+      setResetResult({ kind: 'password', password: newPassword, synced: res.synced, local: res.local, emailed, emailError })
+    } catch (err) {
+      setResetError(err?.message || 'Password reset failed.')
+    } finally {
+      setResetting(false)
+    }
+  }
+
+  const handleSendResetLink = async () => {
+    if (!resetMember) return
+    if (!isRealEmailAddress(resetMember.email)) {
+      setResetError('This member has no real email address on file. Set a new password instead.')
+      return
+    }
+    setResetting(true)
+    setResetError('')
+    try {
+      await requestPasswordReset(resetMember.email)
+      logResetAction(`Sent password reset link to ${resetMember.name || resetMember.email}`, 'info')
+      setResetResult({ kind: 'link' })
+    } catch (err) {
+      setResetError(err?.message || 'Could not send the reset link.')
+    } finally {
+      setResetting(false)
+    }
+  }
+
   // Open delete modal
   const handleOpenDelete = (member) => {
     setActiveMenuUserId(null)
@@ -396,8 +517,7 @@ export default function Settings() {
     if (!deletingMember) return
     setDeletingState(true)
     try {
-      const { error } = await supabase.from('profiles').delete().eq('id', deletingMember.id)
-      if (error) console.warn('Supabase delete profile warning:', error)
+      await deleteProfile(deletingMember.id)
 
       setProfiles(prev => prev.filter(p => p.id !== deletingMember.id))
       setMsg(`✅ Removed ${deletingMember.name || deletingMember.email} from the workspace.`)
@@ -442,21 +562,12 @@ export default function Settings() {
 
   useEffect(() => {
     async function loadProfiles() {
+      setLoading(true)
       try {
-        let query = supabase.from('profiles').select('*')
-        if (user?.company_id) {
-          query = query.eq('company_id', user.company_id)
-        }
-        const { data, error } = await query
-        if (error) throw error
+        const data = await fetchProfiles(user?.company_id)
         setProfiles(data || [])
       } catch (err) {
-        console.warn('Failed to load profiles from database, utilizing fallback values.', err)
-        // Fallback mock team members
-        setProfiles([
-          { id: '1', name: 'Priya Sharma', email: 'priya@example.com', role: 'admin', joined_on: 'May 12, 2025', last_active: '2 min ago' },
-          { id: '2', name: 'Rohit Kumar', email: 'rohit@example.com', role: 'hr', joined_on: 'May 10, 2025', last_active: '1 hour ago' }
-        ])
+        console.warn('Failed to load profiles:', err)
       } finally {
         setLoading(false)
       }
@@ -498,43 +609,63 @@ export default function Settings() {
   }
 
   async function createUser() {
-    if (!form.name || !form.email || !form.password) return
+    if (!form.name?.trim() || !form.email?.trim()) {
+      setMsg('❌ Error: Name and Email are required.')
+      return
+    }
     setCreating(true)
+    setMsg('')
     try {
       const permissionsPayload = normalizePermissions(form.permissions)
       const userCompanyId = user?.company_id || null
+      const passwordToUse = form.password?.trim() || generateTemporaryPassword()
+      const titleToUse = form.title?.trim() || ROLES_CONFIG[form.role]?.label || 'Team Member'
 
-      try {
-        const { data, error } = await supabase.auth.admin.createUser({
-          email: form.email,
-          password: form.password,
-          email_confirm: true,
-          user_metadata: {
-            name: form.name,
-            role: form.role,
-            permissions: permissionsPayload,
-            company_id: userCompanyId
-          }
-        })
-        if (error) throw error
+      const res = await createTeamMember({
+        name: form.name.trim(),
+        email: form.email.trim(),
+        password: passwordToUse,
+        role: form.role,
+        title: titleToUse,
+        company_id: userCompanyId,
+        permissions: permissionsPayload
+      })
 
-        if (data?.user) {
-          await supabase.from('profiles').upsert({
-            id: data.user.id,
-            name: form.name,
-            email: form.email,
-            title: form.title,
-            role: form.role,
-            permissions: permissionsPayload,
-            company_id: userCompanyId
+      let emailNotice = ''
+      if (sendEmailCredentials) {
+        try {
+          await sendEmployeeWelcomeEmail({
+            employeeName: form.name.trim(),
+            employeeEmail: form.email.trim(),
+            employeeId: res.emp_id,
+            password: passwordToUse,
+            role: ROLES_CONFIG[form.role]?.label || form.role,
+            companyName: user?.company_name || 'AM2PM Support'
           })
+          emailNotice = ' ✉️ Login credentials (ID & password) sent to agent email.'
+        } catch (emailErr) {
+          console.warn('Failed to dispatch welcome credentials email:', emailErr)
+          emailNotice = ' (Email simulated or check email settings).'
         }
-      } catch (authAdminErr) {
-        console.warn('Direct auth.admin.createUser fallback:', authAdminErr.message)
       }
 
-      setMsg(`✅ User ${form.name} created successfully under ${user?.company_name || 'your company'}!`)
-      setForm({ name: '', email: '', password: '', role: 'hr', title: '', permissions: buildDefaultPermissions('hr') })
+      setLastCreatedCredentials({
+        name: form.name.trim(),
+        email: form.email.trim(),
+        emp_id: res.emp_id,
+        password: passwordToUse,
+        role: ROLES_CONFIG[form.role]?.label || form.role
+      })
+
+      setMsg(`✅ Team member ${form.name} created successfully!${emailNotice}`)
+      setForm({
+        name: '',
+        email: '',
+        password: generateTemporaryPassword(),
+        role: 'employee',
+        title: '',
+        permissions: buildDefaultPermissions('employee')
+      })
       setShowAdd(false)
 
       createAccessLog({
@@ -544,19 +675,16 @@ export default function Settings() {
         user_role: user?.role || 'admin',
         action: 'USER_INVITE',
         action_label: 'New Account Created',
-        details: `Created new team member profile for ${form.name} (${form.role})`,
+        details: `Created new team member profile for ${form.name} (${form.role}) with ID ${res.emp_id}`,
         ip_address: '103.21.244.18',
         device: `${navigator?.platform || 'Desktop'} · Web Client`,
         status: 'success'
       }).then(newEntry => {
         setAccessLogs(prev => [newEntry, ...prev])
       })
-      
-      // reload
-      let query = supabase.from('profiles').select('*')
-      if (user?.company_id) query = query.eq('company_id', user.company_id)
-      const { data: updated } = await query
-      if (updated) setProfiles(updated)
+
+      // Update profiles state immediately
+      setProfiles(prev => [res.profile, ...prev.filter(p => p.id !== res.profile.id && p.email?.toLowerCase() !== res.profile.email?.toLowerCase())])
     } catch (e) {
       setMsg(`❌ Error: ${e.message}`)
     } finally {
@@ -596,28 +724,121 @@ export default function Settings() {
         </div>
       )}
 
+      {/* Generated Credentials Card */}
+      {lastCreatedCredentials && (
+        <div style={{ background: '#F0FDF4', border: '1.5px solid #86EFAC', borderRadius: 14, padding: '18px 22px', marginBottom: 24, boxShadow: '0 4px 12px rgba(16,185,129,0.08)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+            <div style={{ flex: 1, minWidth: 260 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#166534', display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
+                <CheckCircle2 size={18} color="#16a34a" /> Agent Account Provisioned — {lastCreatedCredentials.name}
+              </div>
+              <div style={{ fontSize: 12, color: '#15803D', marginBottom: 12 }}>
+                Account credentials generated and registered. An automated credentials email was dispatched to <strong>{lastCreatedCredentials.email}</strong>.
+              </div>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 13, background: '#FFFFFF', padding: '12px 16px', borderRadius: 10, border: '1px solid #BBF7D0' }}>
+                <div>
+                  <span style={{ color: 'var(--text-3)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 2 }}>Agent / EMP ID</span>
+                  <strong style={{ fontFamily: 'monospace', color: '#0F172A', fontSize: 14 }}>{lastCreatedCredentials.emp_id}</strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-3)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 2 }}>Login Email</span>
+                  <strong style={{ color: '#0F172A' }}>{lastCreatedCredentials.email}</strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-3)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 2 }}>Temporary Password</span>
+                  <strong style={{ fontFamily: 'monospace', color: '#059669', background: '#DCFCE7', padding: '2px 8px', borderRadius: 4, fontSize: 13 }}>{lastCreatedCredentials.password}</strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-3)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 2 }}>Assigned Role</span>
+                  <strong style={{ color: '#0F172A' }}>{lastCreatedCredentials.role}</strong>
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => {
+                  const text = `Agent ID: ${lastCreatedCredentials.emp_id}\nEmail: ${lastCreatedCredentials.email}\nPassword: ${lastCreatedCredentials.password}\nPortal: ${window.location.origin}/login`
+                  navigator.clipboard?.writeText(text)
+                  setCopiedCredentials(true)
+                  setTimeout(() => setCopiedCredentials(false), 3000)
+                }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#FFFFFF', borderColor: '#86EFAC', color: '#166534', fontWeight: 600 }}
+              >
+                {copiedCredentials ? <Check size={14} color="#16a34a" /> : <Copy size={14} />}
+                {copiedCredentials ? 'Copied!' : 'Copy Credentials'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setLastCreatedCredentials(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#166534', padding: 4 }}
+                title="Dismiss"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add User Slide Panel */}
       {showAdd && (
         <div className="card" style={{ padding: 24, borderRadius: 16, border: '1px solid var(--border)', background: '#FFF', marginBottom: 24 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 700 }}>New team member</h3>
+            <div>
+              <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--text-1)' }}>New team member / agent</h3>
+              <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--text-3)' }}>Provisions login credentials and automatically emails access details to the agent.</p>
+            </div>
             <button onClick={() => setShowAdd(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)' }}>
               <X size={16} />
             </button>
           </div>
           <div className="form-row">
-            <div className="form-group"><label>Full name</label><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Full name" /></div>
-            <div className="form-group"><label>Email</label><input value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="email@company.com" /></div>
+            <div className="form-group"><label>Full name *</label><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Rahul Sharma" /></div>
+            <div className="form-group"><label>Email address *</label><input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="agent@company.com" /></div>
           </div>
           <div className="form-row">
-            <div className="form-group"><label>Temporary password</label><input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Min 6 characters" /></div>
-            <div className="form-group"><label>Job title</label><input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. Sales Manager" /></div>
+            <div className="form-group">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <label style={{ margin: 0 }}>Temporary password *</label>
+                <button 
+                  type="button" 
+                  onClick={() => setForm(f => ({ ...f, password: generateTemporaryPassword() }))}
+                  style={{ background: 'none', border: 'none', color: '#4F46E5', fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                >
+                  <RefreshCw size={11} /> Generate New
+                </button>
+              </div>
+              <input 
+                type="text" 
+                value={form.password} 
+                onChange={e => setForm(f => ({ ...f, password: e.target.value }))} 
+                placeholder="Auto-generated secure password" 
+                style={{ fontFamily: 'monospace', fontWeight: 600 }}
+              />
+            </div>
+            <div className="form-group"><label>Job title</label><input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. Sales Agent / Support Representative" /></div>
           </div>
           <div className="form-group" style={{ maxWidth: 260 }}>
             <label>System role</label>
             <select value={form.role} onChange={e => handleRoleChange(e.target.value)}>
               {Object.entries(ROLES_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </select>
+          </div>
+
+          <div style={{ margin: '16px 0', background: '#F8FAFC', padding: '12px 16px', borderRadius: 10, border: '1px solid var(--border)' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--text-1)', cursor: 'pointer', fontWeight: 600 }}>
+              <input 
+                type="checkbox" 
+                checked={sendEmailCredentials} 
+                onChange={e => setSendEmailCredentials(e.target.checked)} 
+                style={{ width: 16, height: 16, accentColor: '#4F46E5', cursor: 'pointer' }}
+              />
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Mail size={15} color="#4F46E5" /> Send login ID and temporary password to agent's email automatically
+              </span>
+            </label>
           </div>
 
           <div style={{ marginTop: 20 }}>
@@ -644,7 +865,7 @@ export default function Settings() {
 
           <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end' }}>
             <button className="btn btn-secondary btn-sm" onClick={() => setShowAdd(false)}>Cancel</button>
-            <button className="btn btn-primary btn-sm" onClick={createUser} disabled={creating}>{creating ? 'Creating…' : 'Create user'}</button>
+            <button className="btn btn-primary btn-sm" onClick={createUser} disabled={creating}>{creating ? 'Creating…' : 'Create & Provision Account'}</button>
           </div>
         </div>
       )}
@@ -861,6 +1082,18 @@ export default function Settings() {
                                   <Copy size={14} color="var(--text-2)" />
                                   <span>Copy email</span>
                                 </button>
+
+                                {canResetPassword(p) && (
+                                  <button
+                                    onClick={() => handleOpenReset(p)}
+                                    style={actionMenuItemStyle}
+                                    onMouseEnter={e => e.currentTarget.style.background = '#F3F4F6'}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                  >
+                                    <Key size={14} color="var(--text-2)" />
+                                    <span>Reset password</span>
+                                  </button>
+                                )}
 
                                 <button
                                   onClick={() => handleToggleActive(p)}
@@ -1282,6 +1515,132 @@ export default function Settings() {
         </div>
       )}
 
+      {/* Reset Password Modal */}
+      {resetMember && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }}
+          onClick={e => e.target === e.currentTarget && closeReset()}
+        >
+          <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 480, boxShadow: '0 20px 50px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ fontWeight: 700, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Key size={18} color="#4F46E5" /> Reset password
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={closeReset}><X size={16} /></button>
+            </div>
+
+            {!resetResult ? (
+              <>
+                <div style={{ padding: '1.25rem 1.5rem' }}>
+                  <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 14px', lineHeight: 1.5 }}>
+                    Set a new password for <strong>{resetMember.name || resetMember.email}</strong>
+                    {resetMember.name && <span style={{ color: 'var(--text-3)' }}> ({resetMember.email})</span>}. Any existing sessions will be signed out.
+                  </p>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <label style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>New password *</label>
+                    <span style={{ display: 'inline-flex', gap: 12 }}>
+                      <button type="button" onClick={() => setResetShowPwd(v => !v)}
+                        style={{ background: 'none', border: 'none', color: '#4F46E5', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                        {resetShowPwd ? 'Hide' : 'Show'}
+                      </button>
+                      <button type="button" onClick={() => setResetPwd(generateTemporaryPassword())}
+                        style={{ background: 'none', border: 'none', color: '#4F46E5', fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <RefreshCw size={11} /> Generate New
+                      </button>
+                    </span>
+                  </div>
+                  <input
+                    type={resetShowPwd ? 'text' : 'password'}
+                    value={resetPwd}
+                    onChange={e => setResetPwd(e.target.value)}
+                    style={{ width: '100%', boxSizing: 'border-box', borderRadius: 8, fontFamily: 'monospace', fontWeight: 600 }}
+                    autoComplete="new-password"
+                  />
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-1)', cursor: 'pointer', fontWeight: 600, marginTop: 14, background: '#F8FAFC', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)' }}>
+                    <input type="checkbox" checked={resetEmailIt} onChange={e => setResetEmailIt(e.target.checked)} style={{ width: 15, height: 15, accentColor: '#4F46E5' }} />
+                    <span>✉️ Email the new password to {resetMember.email || 'the user'}</span>
+                  </label>
+
+                  {resetError && (
+                    <div style={{ marginTop: 12, background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', borderRadius: 8, padding: '8px 12px', fontSize: 12.5, lineHeight: 1.45 }}>
+                      {resetError}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '1rem 1.5rem', borderTop: '1px solid var(--border)', background: '#F9FAFB', flexWrap: 'wrap' }}>
+                  <button className="btn btn-secondary btn-sm" onClick={handleSendResetLink} disabled={resetting}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} title="Email the user a secure link so they choose their own password">
+                    <Mail size={13} /> Send reset link instead
+                  </button>
+                  <span style={{ display: 'inline-flex', gap: 8 }}>
+                    <button className="btn btn-secondary" onClick={closeReset} disabled={resetting}>Cancel</button>
+                    <button className="btn btn-primary" onClick={handleConfirmReset} disabled={resetting || resetPwd.trim().length < 6}>
+                      {resetting ? 'Working…' : 'Set new password'}
+                    </button>
+                  </span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ padding: '1.5rem' }}>
+                  {resetResult.kind === 'link' ? (
+                    <div style={{ textAlign: 'center' }}>
+                      <CheckCircle2 size={40} color="#16a34a" style={{ marginBottom: 10 }} />
+                      <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>Reset link sent</div>
+                      <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>
+                        A secure link was emailed to <strong>{resetMember.email}</strong>. It lets them choose their own new password.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      {resetResult.synced ? (
+                        <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', color: '#166534', borderRadius: 10, padding: '10px 12px', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                          <CheckCircle2 size={16} /> Password changed for {resetMember.name || resetMember.email}
+                        </div>
+                      ) : resetResult.local ? (
+                        <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E', borderRadius: 10, padding: '10px 12px', fontSize: 12.5, lineHeight: 1.5, marginBottom: 12 }}>
+                          <strong>Updated on this device only.</strong> This account isn't in the live authentication system (or you are in preview mode), so the new password only works for the local preview login.
+                        </div>
+                      ) : (
+                        <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E', borderRadius: 10, padding: '10px 12px', fontSize: 12.5, lineHeight: 1.5, marginBottom: 12 }}>
+                          <strong>No live account was changed.</strong> This member has no account in the live authentication system.
+                        </div>
+                      )}
+
+                      <div style={{ background: '#F8FAFC', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px' }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>New password</div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                          <code style={{ fontSize: 15, fontWeight: 700, color: '#059669' }}>{resetResult.password}</code>
+                          <button className="btn btn-secondary btn-sm"
+                            onClick={() => { navigator.clipboard?.writeText(resetResult.password); setResetCopied(true); setTimeout(() => setResetCopied(false), 2500) }}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                            {resetCopied ? <Check size={13} color="#16a34a" /> : <Copy size={13} />} {resetCopied ? 'Copied' : 'Copy'}
+                          </button>
+                        </div>
+                      </div>
+
+                      <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '10px 0 0', lineHeight: 1.5 }}>
+                        {resetResult.emailed
+                          ? `✉️ Emailed to ${resetMember.email}.`
+                          : resetResult.emailError
+                            ? `⚠️ Email not sent (${resetResult.emailError}). Share the password with the user securely.`
+                            : 'Share this password with the user securely — it will not be shown again.'}
+                      </p>
+                    </>
+                  )}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '1rem 1.5rem', borderTop: '1px solid var(--border)', background: '#F9FAFB' }}>
+                  <button className="btn btn-primary" onClick={closeReset}>Done</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Delete User Confirmation Modal */}
       {deletingMember && (
         <div 
@@ -1492,6 +1851,16 @@ export default function Settings() {
                           >
                             <Copy size={12} />
                           </button>
+                          {canResetPassword(p) && (
+                            <button 
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => handleOpenReset(p)}
+                              style={{ height: 30, fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                              title="Reset password"
+                            >
+                              <Key size={12} />
+                            </button>
+                          )}
                           <button 
                             className="btn btn-secondary btn-sm"
                             onClick={() => handleToggleActive(p)}

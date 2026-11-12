@@ -47,3 +47,31 @@ test('buildEmailDraft creates a hiring-specific subject and body', () => {
   assert.match(draft.body, /consent/i)
   assert.match(draft.body, /job/i)
 })
+
+import { sanitizeManualEmail, makePlaceholderEmail } from './emailUtils.js'
+
+test('extractCandidateEmail strips a phone number glued in front of the address', () => {
+  assert.equal(extractCandidateEmail('Phone: 9876543210john.doe@gmail.com'), 'john.doe@gmail.com')
+})
+
+test('extractCandidateEmail strips a word glued after the TLD (PDF text)', () => {
+  assert.equal(extractCandidateEmail('john.doe@gmail.comLinkedIn: linkedin.com/in/x'), 'john.doe@gmail.com')
+  assert.equal(extractCandidateEmail('jane@yahoo.comSkills'), 'jane@yahoo.com')
+})
+
+test('extractCandidateEmail keeps legitimate long TLDs', () => {
+  assert.equal(extractCandidateEmail('Email: hr@acme.company'), 'hr@acme.company')
+})
+
+test('sanitizeManualEmail accepts typed emails and rejects garbage', () => {
+  assert.equal(sanitizeManualEmail('  John.Doe@Gmail.com '), 'john.doe@gmail.com')
+  assert.equal(sanitizeManualEmail('mailto:a@b.co.in'), 'a@b.co.in')
+  assert.equal(sanitizeManualEmail('not-an-email'), '')
+  assert.equal(sanitizeManualEmail('a@b'), '')
+})
+
+test('makePlaceholderEmail is unique and never treated as a real email', async () => {
+  const a = makePlaceholderEmail(0), b = makePlaceholderEmail(0)
+  assert.notEqual(a, b)
+  assert.equal(extractCandidateEmail('', a), '')
+})

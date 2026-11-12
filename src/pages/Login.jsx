@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../lib/auth.jsx'
 import { LogIn, Eye, EyeOff, Star, ArrowLeft, ArrowRight } from 'lucide-react'
-import { isConfigured } from '../lib/supabase.js'
+import { isConfigured, requestPasswordReset } from '../lib/supabase.js'
 
 const DEMO_USERS = [
   { label: '👑 Super Admin', email: 'mayank@am2pmsupport.com', password: 'admin123' },
@@ -45,7 +45,7 @@ export default function Login() {
   const { login, register, error: authError, setError } = useAuth()
   const [formError, setFormError] = useState('')
   const displayError = formError || authError
-  const [mode, setMode] = useState('login') // 'login' | 'register'
+  const [mode, setMode] = useState('login') // 'login' | 'register' | 'forgot'
   
   // Fields
   const [email,     setEmail]     = useState('')
@@ -107,7 +107,10 @@ export default function Login() {
     setFormError('')
     if (setError) setError('')
     try {
-      if (mode === 'login') {
+      if (mode === 'forgot') {
+        await requestPasswordReset(email)
+        setSuccess(`If an account exists for ${email.trim()}, a password reset link has been sent. Check your inbox (and spam folder).`)
+      } else if (mode === 'login') {
         await login(email, password)
       } else {
         const roleObj = workspaceRoles.find(r => r.value === role) || { authRole: 'employee', label: 'Employee' }
@@ -127,7 +130,8 @@ export default function Login() {
         }
       }
     } catch (err) {
-      // Error handled by AuthContext
+      // Login/register errors are handled by AuthContext; the reset flow reports its own
+      if (mode === 'forgot') setFormError(err?.message || 'Could not send the reset link. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -455,8 +459,15 @@ export default function Login() {
             )}
 
             <h2 className="welcome-heading">
-              {mode === 'login' ? 'Please Enter your Account details' : 'Please fill in details to register'}
+              {mode === 'login' ? 'Please Enter your Account details' : mode === 'forgot' ? 'Reset your password' : 'Please fill in details to register'}
             </h2>
+
+            {mode === 'forgot' && (
+              <p style={{ fontSize: 13, color: '#94a3b8', margin: '-0.75rem 0 1.25rem', lineHeight: 1.5 }}>
+                Enter your account email and we'll send you a link to choose a new password.
+                If you don't receive it, ask your administrator to reset it for you.
+              </p>
+            )}
 
             <form onSubmit={handleSubmit}>
               {/* Full Name field (Register only) */}
@@ -488,6 +499,7 @@ export default function Login() {
               </div>
 
               {/* Password field */}
+              {mode !== 'forgot' && (
               <div style={{ position: 'relative', marginBottom: '1.25rem' }}>
                 <label className="input-label-tag">Password</label>
                 <input
@@ -519,6 +531,7 @@ export default function Login() {
                   {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
+              )}
 
               {/* Workspace Role field (Register only) */}
               {mode === 'register' && (
@@ -591,7 +604,13 @@ export default function Login() {
 
               {/* Forgot Password link (Login mode only) */}
               {mode === 'login' && (
-                <span className="forgot-pass-link" onClick={() => alert('Demo Feature: Forgot password clicked!')}>
+                <span
+                  className="forgot-pass-link"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => { setMode('forgot'); setFormError(''); if (setError) setError(''); setSuccess('') }}
+                  onKeyDown={e => { if (e.key === 'Enter') { setMode('forgot'); setFormError(''); if (setError) setError(''); setSuccess('') } }}
+                >
                   Forgot Password
                 </span>
               )}
@@ -634,14 +653,21 @@ export default function Login() {
                 {loading ? (
                   <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2, borderTopColor: '#ffffff' }} />
                 ) : (
-                  <span>{mode === 'login' ? 'Sign in' : 'Create account'}</span>
+                  <span>{mode === 'login' ? 'Sign in' : mode === 'forgot' ? 'Send reset link' : 'Create account'}</span>
                 )}
               </button>
             </form>
 
             {/* Toggle Link */}
             <div className="toggle-section">
-              {mode === 'login' ? (
+              {mode === 'forgot' ? (
+                <>
+                  Remembered it?
+                  <span className="toggle-btn" onClick={() => { setMode('login'); setFormError(''); if (setError) setError(''); setSuccess('') }}>
+                    Back to sign in
+                  </span>
+                </>
+              ) : mode === 'login' ? (
                 <>
                   Don't have an account?
                   <span className="toggle-btn" onClick={() => { setMode('register'); setFormError(''); if (setError) setError(''); setSuccess('') }}>

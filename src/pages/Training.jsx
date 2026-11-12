@@ -1,14 +1,17 @@
 import { useState, useEffect, useRef } from 'react'
+import { useAuth } from '../lib/auth.jsx'
 import {
   fetchEmployees, fetchTrainingModules, createEmployee, fetchCandidatesForTraining,
   createTrainingModule, uploadTrainingFile, updateEmployee,
-  fetchTrainingProgress, upsertTrainingProgress
+  fetchTrainingProgress, upsertTrainingProgress, generateTemporaryPassword
 } from '../lib/supabase.js'
+import { sendEmployeeWelcomeEmail } from '../lib/resend.js'
 import {
   GraduationCap, PlayCircle, FileText, CheckCircle, Clock,
   ChevronDown, ChevronUp, Send, AlertCircle, UserPlus, X,
   Users, User, Upload, Video, BookOpen, Plus, Circle, Square, Camera, RefreshCw, Pause, Play,
-  Award, Shield, Heart, Search, ArrowRight, CheckSquare, Sparkles, Filter
+  Award, Shield, Heart, Search, ArrowRight, CheckSquare, Sparkles, Filter,
+  Key, Mail, Copy, Check
 } from 'lucide-react'
 
 // ─── CONSTANTS ────────────────────────────────────────────────
@@ -38,12 +41,19 @@ const STATUS_COLORS = {
 
 // ─── ADD EMPLOYEE MODAL ───────────────────────────────────────
 
-function AddEmployeeModal({ onClose, onAdded }) {
+function AddEmployeeModal({ companyId, companyName, onClose, onAdded }) {
   const [mode, setMode]             = useState('candidate')
   const [candidates, setCandidates] = useState([])
   const [loadingC, setLoadingC]     = useState(false)
   const [selected, setSelected]     = useState(null)
-  const [form, setForm]             = useState({ name: '', profile: '', mobile: '', email: '' })
+  const [form, setForm]             = useState({
+    name: '',
+    profile: '',
+    mobile: '',
+    email: '',
+    password: generateTemporaryPassword(),
+    sendEmail: true
+  })
   const [saving, setSaving]         = useState(false)
   const [error, setError]           = useState('')
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -63,29 +73,92 @@ function AddEmployeeModal({ onClose, onAdded }) {
     setSaving(true); setError('')
     try {
       const c = selected.candidates
+      const password = generateTemporaryPassword()
+      const empId = 'EMP' + Date.now().toString().slice(-6)
       const emp = await createEmployee({
-        name: c.name, emp_id: 'EMP' + Date.now().toString().slice(-6),
+        name: c.name,
+        emp_id: empId,
         job_title: selected.jobs?.title || 'Employee',
         department: selected.jobs?.department || 'General',
-        email: c.email, phone: c.phone || null,
-        candidate_id: c.id, application_id: selected.id,
-        status: 'active', date_of_joining: new Date().toISOString().slice(0, 10)
+        email: c.email,
+        phone: c.phone || null,
+        candidate_id: c.id,
+        application_id: selected.id,
+        status: 'active',
+        password,
+        date_of_joining: new Date().toISOString().slice(0, 10),
+        company_id: companyId
+      }, companyId)
+
+      try {
+        await sendEmployeeWelcomeEmail({
+          employeeName: c.name,
+          employeeEmail: c.email,
+          employeeId: emp.emp_id || empId,
+          password,
+          role: selected.jobs?.title || 'Employee',
+          companyName: companyName || 'AM2PM Support'
+        })
+      } catch (mailErr) {
+        console.warn('Welcome email error:', mailErr)
+      }
+
+      onAdded(emp, {
+        name: c.name,
+        email: c.email,
+        emp_id: emp.emp_id || empId,
+        password,
+        role: selected.jobs?.title || 'Employee'
       })
-      onAdded(emp); onClose()
+      onClose()
     } catch (e) { setError(e.message); setSaving(false) }
   }
 
   async function addManually() {
-    if (!form.name || !form.profile || !form.email) { setError('Name, Profile, and Email are required.'); return }
+    if (!form.name?.trim() || !form.profile?.trim() || !form.email?.trim()) {
+      setError('Name, Profile, and Email are required.')
+      return
+    }
     setSaving(true); setError('')
     try {
+      const password = form.password?.trim() || generateTemporaryPassword()
+      const empId = 'EMP' + Date.now().toString().slice(-6)
       const emp = await createEmployee({
-        name: form.name.trim(), emp_id: 'EMP' + Date.now().toString().slice(-6),
-        job_title: form.profile.trim(), department: 'General',
-        email: form.email.trim(), phone: form.mobile.trim() || null,
-        status: 'active', date_of_joining: new Date().toISOString().slice(0, 10)
+        name: form.name.trim(),
+        emp_id: empId,
+        job_title: form.profile.trim(),
+        department: 'General',
+        email: form.email.trim(),
+        phone: form.mobile.trim() || null,
+        status: 'active',
+        password,
+        date_of_joining: new Date().toISOString().slice(0, 10),
+        company_id: companyId
+      }, companyId)
+
+      if (form.sendEmail) {
+        try {
+          await sendEmployeeWelcomeEmail({
+            employeeName: form.name.trim(),
+            employeeEmail: form.email.trim(),
+            employeeId: emp.emp_id || empId,
+            password,
+            role: form.profile.trim(),
+            companyName: companyName || 'AM2PM Support'
+          })
+        } catch (mailErr) {
+          console.warn('Welcome email error:', mailErr)
+        }
+      }
+
+      onAdded(emp, {
+        name: form.name.trim(),
+        email: form.email.trim(),
+        emp_id: emp.emp_id || empId,
+        password,
+        role: form.profile.trim()
       })
-      onAdded(emp); onClose()
+      onClose()
     } catch (e) { setError(e.message); setSaving(false) }
   }
 
@@ -154,6 +227,36 @@ function AddEmployeeModal({ onClose, onAdded }) {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div><label style={{ fontSize: 12, color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Mobile no</label><input value={form.mobile} onChange={e => set('mobile', e.target.value)} placeholder="+91 98765 43210" style={{ width: '100%', borderRadius: 8 }}/></div>
                 <div><label style={{ fontSize: 12, color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Email ID *</label><input type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="rahul@company.com" style={{ width: '100%', borderRadius: 8 }}/></div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12 }}>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <label style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>Temporary password *</label>
+                    <button 
+                      type="button" 
+                      onClick={() => set('password', generateTemporaryPassword())}
+                      style={{ background: 'none', border: 'none', color: '#4F46E5', fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    >
+                      <RefreshCw size={11} /> Generate New
+                    </button>
+                  </div>
+                  <input 
+                    value={form.password} 
+                    onChange={e => set('password', e.target.value)} 
+                    style={{ width: '100%', borderRadius: 8, fontFamily: 'monospace', fontWeight: 600 }}
+                  />
+                </div>
+              </div>
+              <div style={{ background: '#F8FAFC', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-1)', cursor: 'pointer', fontWeight: 600 }}>
+                  <input 
+                    type="checkbox" 
+                    checked={form.sendEmail} 
+                    onChange={e => set('sendEmail', e.target.checked)} 
+                    style={{ width: 15, height: 15, accentColor: '#4F46E5', cursor: 'pointer' }}
+                  />
+                  <span>✉️ Automatically email login ID &amp; password to employee</span>
+                </label>
               </div>
             </div>
           )}
@@ -714,6 +817,7 @@ function AddContentModal({ employees, trainingTypes, setTrainingTypes, onClose, 
 // ─── MAIN PAGE ────────────────────────────────────────────────
 
 export default function Training() {
+  const { user } = useAuth()
   const [employees, setEmployees]       = useState([])
   const [modules, setModules]           = useState([])
   const [selectedEmp, setSelectedEmp]   = useState(null)
@@ -730,6 +834,8 @@ export default function Training() {
   const [showAddContent, setShowAddContent] = useState(false)
   const [playingMod, setPlayingMod]     = useState(null)
   const [updatingType, setUpdatingType] = useState(false)
+  const [lastCredentials, setLastCredentials] = useState(null)
+  const [copiedCreds, setCopiedCreds]   = useState(false)
 
   // Filters State
   const [activeTab, setActiveTab]       = useState('all') // 'all' | 'in_progress' | 'completed' | 'overdue' | 'training_contents'
@@ -749,7 +855,7 @@ export default function Training() {
   }, [trainingTypes])
 
   useEffect(() => {
-    Promise.all([fetchEmployees(), fetchTrainingModules()])
+    Promise.all([fetchEmployees(user?.company_id), fetchTrainingModules(user?.company_id)])
       .then(([e, m]) => {
         setEmployees(e || [])
         setModules(m || [])
@@ -776,9 +882,15 @@ export default function Training() {
       })
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [])
+  }, [user?.company_id])
 
-  function handleAdded(emp) { setEmployees(prev => [emp, ...prev]); selectEmp(emp) }
+  function handleAdded(emp, creds) {
+    setEmployees(prev => [emp, ...prev])
+    selectEmp(emp)
+    if (creds) {
+      setLastCredentials(creds)
+    }
+  }
   function handleModuleAdded(mod) { setModules(prev => [...prev, mod]) }
 
   function selectEmp(emp) {
@@ -939,7 +1051,14 @@ export default function Training() {
 
   return (
     <div style={{ fontFamily: 'var(--font-body)', color: 'var(--text-1)', paddingBottom: 40 }}>
-      {showAddEmp     && <AddEmployeeModal onClose={() => setShowAddEmp(false)} onAdded={handleAdded}/>}
+      {showAddEmp     && (
+        <AddEmployeeModal 
+          companyId={user?.company_id} 
+          companyName={user?.company_name} 
+          onClose={() => setShowAddEmp(false)} 
+          onAdded={handleAdded}
+        />
+      )}
       {showAddContent && (
         <AddContentModal 
           employees={employees} 
@@ -965,6 +1084,64 @@ export default function Training() {
           </button>
         </div>
       </div>
+
+      {/* Credentials Banner if employee recently added */}
+      {lastCredentials && (
+        <div style={{ background: '#F0FDF4', border: '1.5px solid #86EFAC', borderRadius: 14, padding: '16px 20px', marginBottom: 24, boxShadow: '0 4px 12px rgba(16,185,129,0.08)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+            <div style={{ flex: 1, minWidth: 260 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#166534', display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
+                <CheckCircle size={18} color="#16a34a" /> Agent Account Provisioned — {lastCredentials.name}
+              </div>
+              <div style={{ fontSize: 12, color: '#15803D', marginBottom: 10 }}>
+                Login ID and password have been registered. Automated credentials email sent to <strong>{lastCredentials.email}</strong>.
+              </div>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 13, background: '#FFFFFF', padding: '10px 14px', borderRadius: 10, border: '1px solid #BBF7D0' }}>
+                <div>
+                  <span style={{ color: 'var(--text-3)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>AGENT ID</span>
+                  <strong style={{ fontFamily: 'monospace', color: '#0F172A' }}>{lastCredentials.emp_id}</strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-3)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>EMAIL</span>
+                  <strong style={{ color: '#0F172A' }}>{lastCredentials.email}</strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-3)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>PASSWORD</span>
+                  <strong style={{ fontFamily: 'monospace', color: '#059669', background: '#DCFCE7', padding: '1px 6px', borderRadius: 4 }}>{lastCredentials.password}</strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-3)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>ROLE</span>
+                  <strong style={{ color: '#0F172A' }}>{lastCredentials.role}</strong>
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => {
+                  const text = `Agent ID: ${lastCredentials.emp_id}\nEmail: ${lastCredentials.email}\nPassword: ${lastCredentials.password}\nPortal: ${window.location.origin}/login`
+                  navigator.clipboard?.writeText(text)
+                  setCopiedCreds(true)
+                  setTimeout(() => setCopiedCreds(false), 3000)
+                }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#FFFFFF', borderColor: '#86EFAC', color: '#166534', fontWeight: 600 }}
+              >
+                {copiedCreds ? <Check size={14} color="#16a34a" /> : <Copy size={14} />}
+                {copiedCreds ? 'Copied!' : 'Copy Credentials'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setLastCredentials(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#166534', padding: 4 }}
+                title="Dismiss"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Metrics Row */}
       <div style={{

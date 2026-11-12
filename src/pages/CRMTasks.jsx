@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { fetchLeads, updateLead, logCall, fetchTasks, createLead, createTask, fetchEmployees, createEmployee } from '../lib/supabase.js'
+import { fetchLeads, updateLead, logCall, fetchTasks, createLead, createTask, fetchEmployees, createEmployee, generateTemporaryPassword } from '../lib/supabase.js'
 import { useAuth } from '../lib/auth.jsx'
 import { sendWhatsAppMessage } from '../lib/twilio.js'
-import { sendConsentEmail } from '../lib/resend.js'
+import { sendConsentEmail, sendEmployeeWelcomeEmail } from '../lib/resend.js'
 import {
   Phone, CheckSquare, Clock, Plus, Bell, MessageSquare, Target, Calendar, Upload, X, CheckCircle,
   FileText, UserPlus, ChevronDown, ChevronUp, Loader, Users, Mail, MessageCircle, Save, StickyNote,
@@ -113,7 +113,7 @@ function UploadTasksModal({ onClose, onSaved }) {
 
   function loadEmployees() {
     setLoadingEmps(true)
-    fetchEmployees()
+    fetchEmployees(user?.company_id)
       .then(setEmployees)
       .catch(e => setError(e.message))
       .finally(() => setLoadingEmps(false))
@@ -123,16 +123,35 @@ function UploadTasksModal({ onClose, onSaved }) {
     if (!newEmp.name.trim() || !newEmp.email.trim()) { setError('Name and Email are required for new employee.'); return }
     setAddingEmp(true); setError('')
     try {
+      const password = generateTemporaryPassword()
+      const empId = 'EMP' + Date.now().toString().slice(-6)
       const emp = await createEmployee({
         name: newEmp.name.trim(),
-        emp_id: 'EMP' + Date.now().toString().slice(-6),
+        emp_id: empId,
         job_title: newEmp.role.trim() || 'Employee',
         department: 'General',
         email: newEmp.email.trim(),
         phone: newEmp.phone.trim() || null,
         status: 'active',
-        date_of_joining: new Date().toISOString().slice(0, 10)
-      })
+        password,
+        date_of_joining: new Date().toISOString().slice(0, 10),
+        company_id: user?.company_id || null
+      }, user?.company_id || null)
+
+      // Automatically email credentials to agent
+      try {
+        await sendEmployeeWelcomeEmail({
+          employeeName: newEmp.name.trim(),
+          employeeEmail: newEmp.email.trim(),
+          employeeId: emp.emp_id || empId,
+          password,
+          role: newEmp.role.trim() || 'Employee',
+          companyName: user?.company_name || 'AM2PM Support'
+        })
+      } catch (mailErr) {
+        console.warn('Welcome email error:', mailErr)
+      }
+
       setEmployees(prev => [emp, ...prev])
       setSelectedEmp(emp)
       setShowNewEmp(false)

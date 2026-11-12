@@ -1,12 +1,14 @@
 const RESEND_API = 'https://api.resend.com/emails'
 const API_KEY    = import.meta.env.VITE_RESEND_API_KEY
-const APP_URL    = import.meta.env.VITE_APP_URL || 'http://localhost:3000'
-const COMPANY    = import.meta.env.VITE_COMPANY_NAME || 'Mr. Manager'
+const APP_URL    = import.meta.env.VITE_APP_URL || (typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://mrmanager.am2pmsupport.in')
+const COMPANY    = import.meta.env.VITE_COMPANY_NAME || 'AM2PM Support'
 const FROM_EMAIL = 'hiring@talentos.app' // Update with your verified Resend domain
 
+const isResendConfigured = !!(API_KEY && API_KEY !== 'your_resend_api_key' && !API_KEY.includes('your_'))
+
 async function sendEmail({ to, subject, html }) {
-  if (!API_KEY) {
-    console.warn('Resend API key not configured. Email not sent:', subject)
+  if (!isResendConfigured) {
+    console.warn('Resend API key not configured. Email simulated:', subject)
     return { simulated: true }
   }
 
@@ -16,7 +18,7 @@ async function sendEmail({ to, subject, html }) {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${API_KEY}`
     },
-    body: JSON.stringify({ from: `${COMPANY} Hiring <${FROM_EMAIL}>`, to, subject, html })
+    body: JSON.stringify({ from: `${COMPANY} <${FROM_EMAIL}>`, to, subject, html })
   })
 
   const data = await response.json()
@@ -25,8 +27,17 @@ async function sendEmail({ to, subject, html }) {
 }
 
 function openMailto({ to, subject, body }) {
-  const mailtoUrl = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
-  window.open(mailtoUrl, '_blank')
+  if (typeof window === 'undefined') return
+  try {
+    const link = document.createElement('a')
+    link.href = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  } catch {
+    window.location.href = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+  }
 }
 
 // ─── CONSENT EMAIL ────────────────────────────────────────────
@@ -218,4 +229,145 @@ The ${COMPANY} Hiring Team`
 </html>`
 
   return sendEmail({ to: candidateEmail, subject: `Interview scheduled — ${jobTitle} at ${COMPANY}`, html })
+}
+
+// ─── AGENT / EMPLOYEE WELCOME CREDENTIALS EMAIL ───────────────
+
+export async function sendEmployeeWelcomeEmail({
+  employeeName,
+  employeeEmail,
+  employeeId,
+  password,
+  role = 'Employee',
+  companyName = 'AM2PM Support',
+  loginUrl
+}) {
+  const url = loginUrl || (typeof window !== 'undefined' && window.location?.origin ? `${window.location.origin}/login` : `${APP_URL}/login`)
+  const subject = `🎉 Welcome to ${companyName} — Your Agent Account Credentials`
+
+  if (!isResendConfigured) {
+    const body = `Hi ${employeeName} 👋,
+
+Welcome to ${companyName}! Your agent account has been created on AM2PM's Mr. Manager platform.
+
+Here are your account credentials:
+- Portal URL: ${url}
+- Agent / Employee ID: ${employeeId || 'N/A'}
+- Login Email: ${employeeEmail}
+- Temporary Password: ${password}
+- Assigned Role: ${role}
+
+Please log in using the link above and update your password on your first login.
+
+Best regards,
+The ${companyName} Team`
+
+    openMailto({ to: employeeEmail, subject, body })
+    return { simulated: true, mailto: true }
+  }
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#F8F9FC;font-family:Inter,system-ui,-apple-system,sans-serif;">
+  <div style="max-width:560px;margin:40px auto;background:#fff;border-radius:14px;overflow:hidden;border:1px solid #E4E7EF;box-shadow:0 10px 25px rgba(0,0,0,0.05);">
+    <div style="background:#1b3d36;padding:32px 40px;color:#fff;">
+      <div style="font-size:22px;font-weight:800;letter-spacing:-0.3px;color:#3cb27f;">AM2PM's Mr. Manager</div>
+      <div style="font-size:13px;color:rgba(255,255,255,0.7);margin-top:4px;">${companyName} — Agent Onboarding</div>
+    </div>
+    <div style="padding:36px 40px;">
+      <h2 style="margin:0 0 16px;font-size:20px;color:#0F1117;">Welcome, ${employeeName} 👋</h2>
+      <p style="margin:0 0 20px;font-size:14px;color:#4A5068;line-height:1.6;">
+        An agent account has been provisioned for you at <strong>${companyName}</strong>. You can now access your assigned tasks, training modules, and company workflows.
+      </p>
+
+      <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:20px;margin:20px 0;">
+        <div style="font-size:12px;font-weight:700;color:#166534;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px;">Your Login Credentials</div>
+        <div style="font-size:13px;color:#334155;margin-bottom:8px;">🆔 Agent ID: <strong style="color:#0F172A;font-family:monospace;font-size:14px;">${employeeId || 'N/A'}</strong></div>
+        <div style="font-size:13px;color:#334155;margin-bottom:8px;">📧 Email: <strong style="color:#0F172A;">${employeeEmail}</strong></div>
+        <div style="font-size:13px;color:#334155;margin-bottom:8px;">🔑 Password: <strong style="color:#059669;font-family:monospace;font-size:15px;background:#DCFCE7;padding:2px 8px;border-radius:4px;">${password}</strong></div>
+        <div style="font-size:13px;color:#334155;">💼 Role: <strong style="color:#0F172A;">${role}</strong></div>
+      </div>
+
+      <div style="text-align:center;margin:28px 0 20px;">
+        <a href="${url}" style="display:inline-block;background:#3cb27f;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;">
+          Log In to Mr. Manager →
+        </a>
+      </div>
+
+      <p style="font-size:12px;color:#8B91A8;line-height:1.6;margin:24px 0 0;">
+        Please keep these credentials safe and change your password upon your first sign in.<br>
+        If you have questions, reach out to your administrator.
+      </p>
+    </div>
+    <div style="background:#F8F9FC;padding:16px 40px;border-top:1px solid #E4E7EF;font-size:12px;color:#8B91A8;text-align:center;">
+      Sent by ${companyName} via Mr. Manager Platform
+    </div>
+  </div>
+</body>
+</html>`
+
+  return sendEmail({ to: employeeEmail, subject, html })
+}
+
+
+// ─── PASSWORD CHANGED BY ADMIN EMAIL ──────────────────────────
+
+export async function sendPasswordResetByAdminEmail({
+  employeeName,
+  employeeEmail,
+  password,
+  companyName = 'AM2PM Support',
+  loginUrl
+}) {
+  const url = loginUrl || (typeof window !== 'undefined' && window.location?.origin ? `${window.location.origin}/login` : `${APP_URL}/login`)
+  const subject = `Your ${companyName} password has been reset`
+
+  if (!isResendConfigured) {
+    const body = `Hi ${employeeName || 'there'},
+
+Your administrator has reset your password for AM2PM's Mr. Manager.
+
+- Login URL: ${url}
+- Email: ${employeeEmail}
+- New temporary password: ${password}
+
+Please sign in and change this password as soon as possible.
+
+Best regards,
+The ${companyName} Team`
+    openMailto({ to: employeeEmail, subject, body })
+    return { simulated: true, mailto: true }
+  }
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#F8F9FC;font-family:Inter,system-ui,-apple-system,sans-serif;">
+  <div style="max-width:560px;margin:40px auto;background:#fff;border-radius:14px;overflow:hidden;border:1px solid #E4E7EF;">
+    <div style="background:#1b3d36;padding:28px 40px;">
+      <div style="font-size:20px;font-weight:800;color:#3cb27f;">AM2PM's Mr. Manager</div>
+      <div style="font-size:13px;color:rgba(255,255,255,0.7);margin-top:4px;">${companyName} — Password reset</div>
+    </div>
+    <div style="padding:32px 40px;">
+      <h2 style="margin:0 0 14px;font-size:19px;color:#0F1117;">Hi ${employeeName || 'there'},</h2>
+      <p style="margin:0 0 18px;font-size:14px;color:#4A5068;line-height:1.6;">
+        Your administrator has reset your password. Use the temporary password below to sign in, then change it.
+      </p>
+      <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:18px;margin:18px 0;">
+        <div style="font-size:13px;color:#334155;margin-bottom:8px;">📧 Email: <strong style="color:#0F172A;">${employeeEmail}</strong></div>
+        <div style="font-size:13px;color:#334155;">🔑 New password: <strong style="color:#059669;font-family:monospace;font-size:15px;background:#DCFCE7;padding:2px 8px;border-radius:4px;">${password}</strong></div>
+      </div>
+      <div style="text-align:center;margin:24px 0 8px;">
+        <a href="${url}" style="display:inline-block;background:#3cb27f;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;">Log in →</a>
+      </div>
+      <p style="font-size:12px;color:#8B91A8;line-height:1.6;margin:20px 0 0;">If you did not expect this, contact your administrator.</p>
+    </div>
+  </div>
+</body>
+</html>`
+
+  return sendEmail({ to: employeeEmail, subject, html })
 }
